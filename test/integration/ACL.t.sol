@@ -1173,15 +1173,15 @@ contract ACLManagerACLTests is SparkLendTestBase {
     address public ADMIN       = admin;
     address public SET_ADDRESS = makeAddr("setAddress");
 
-    // address(this) == 0xdeb1e9a6be7baf84208bb6e10ac9f9bbe1d70809, role is DEFAULT_ADMIN_ROLE
+    // address(this) == 0x7fa9385be102ac3eac297483dd6233d62b3e1496, role is DEFAULT_ADMIN_ROLE
     // NOTE: Using raw string for address because vm.toString keeps checksum while the error message does not
     bytes public defaultAdminError
-        = "AccessControl: account 0xdeb1e9a6be7baf84208bb6e10ac9f9bbe1d70809 is missing role 0x0000000000000000000000000000000000000000000000000000000000000000";
+        = "AccessControl: account 0x7fa9385be102ac3eac297483dd6233d62b3e1496 is missing role 0x0000000000000000000000000000000000000000000000000000000000000000";
 
     function setUp() public override {
         super.setUp();
 
-        assertEq(address(this), 0xDEb1E9a6Be7Baf84208BB6E10aC9F9bbE1D70809);
+        assertEq(address(this), 0x7FA9385bE102ac3EAc297483Dd6233D62b3e1496);
     }
 
     /**********************************************************************************************/
@@ -1324,7 +1324,7 @@ contract ACLManagerACLTests is SparkLendTestBase {
         vm.stopPrank();
 
         bytes memory errorMessage = abi.encodePacked(
-            "AccessControl: account 0xdeb1e9a6be7baf84208bb6e10ac9f9bbe1d70809 is missing role ",
+            "AccessControl: account 0x7fa9385be102ac3eac297483dd6233d62b3e1496 is missing role ",
             vm.toString(bytes32("TEST_ROLE_ADMIN"))
         );
 
@@ -1344,7 +1344,7 @@ contract ACLManagerACLTests is SparkLendTestBase {
         vm.stopPrank();
 
         bytes memory errorMessage = abi.encodePacked(
-            "AccessControl: account 0xdeb1e9a6be7baf84208bb6e10ac9f9bbe1d70809 is missing role ",
+            "AccessControl: account 0x7fa9385be102ac3eac297483dd6233d62b3e1496 is missing role ",
             vm.toString(bytes32("TEST_ROLE_ADMIN"))
         );
 
