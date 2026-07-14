@@ -1,0 +1,17 @@
+{
+  "lib/erc20-helpers": {
+    "rev": "3c66d2b38ae12f5c0f81068fdb6a59f4079c799a"
+  },
+  "lib/forge-std": {
+    "rev": "36c303b7ffdd842d06b1ec2744c9b9b5fb3083f3"
+  },
+  "lib/sparklend-address-registry": {
+    "rev": "405954de096cea0ccd3cd70eced2f5f4ef69a2ae"
+  },
+  "lib/sparklend-advanced": {
+    "rev": "f72c4df091edc542e31b54619f63937ae03c5f1f"
+  },
+  "lib/sparklend-v1-core": {
+    "rev": "8120e495061dc3315f0a86f682f4ca645a418bf7"
+  }
+}

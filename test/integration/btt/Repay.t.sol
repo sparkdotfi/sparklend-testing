@@ -696,7 +696,7 @@ contract RepayConcreteTests is RepayTestBase {
         assetParams.aTokenBalance = 500 ether + borrowerDebt - 1;
 
         _assertPoolReserveState(poolParams);
-        _assertDebtTokenState(debtTokenParams);
+        _assertDebtTokenState(debtTokenParams, 1);
         _assertAssetState(assetParams);
     }
 

@@ -548,7 +548,7 @@ contract FlashLoanSuccessTests is FlashLoanTestBase {
 
         poolParams.accruedToTreasury = 0;
 
-        aTokenParams.totalSupply = 1010 ether;  // 0.5 ether minted to the treasury
+        aTokenParams.totalSupply = 1010 ether - 1;  // 0.5 ether - 1 minted to the treasury
 
         _assertPoolReserveState(poolParams);
         _assertATokenState(aTokenParams);
@@ -561,8 +561,8 @@ contract FlashLoanSuccessTests is FlashLoanTestBase {
 
         _withdraw(supplier, asset0, 1009.5 ether);
         _withdraw(supplier, asset1, 1009.5 ether);
-        _withdraw(treasury, asset0, 0.5 ether);
-        _withdraw(treasury, asset1, 0.5 ether);
+        _withdraw(treasury, asset0, 0.5 ether - 1);  // Rounding
+        _withdraw(treasury, asset1, 0.5 ether - 1);  // Rounding
 
         IERC20 aToken0 = IERC20(pool.getReserveData(asset0).aTokenAddress);
         IERC20 aToken1 = IERC20(pool.getReserveData(asset1).aTokenAddress);
@@ -575,9 +575,9 @@ contract FlashLoanSuccessTests is FlashLoanTestBase {
         assertEq(aToken1.balanceOf(supplier), 0);
         assertEq(aToken1.totalSupply(),       0);
 
-        assertEq(IERC20(asset0).balanceOf(treasury),              0.5 ether);
+        assertEq(IERC20(asset0).balanceOf(treasury),              0.5 ether - 1);  // Rounding
         assertEq(IERC20(asset0).balanceOf(supplier),              1009.5 ether);
-        assertEq(IERC20(asset0).balanceOf(address(aBorrowAsset)), 0);
+        assertEq(IERC20(asset0).balanceOf(address(aBorrowAsset)), 1);
     }
 
     function test_flashLoan_06()

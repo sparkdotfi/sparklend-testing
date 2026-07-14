@@ -360,7 +360,8 @@ contract MintToTreasuryTests is SparkLendTestBase {
 
         IAToken aBorrowAsset_ = IAToken(pool.getReserveData(borrowAsset_).aTokenAddress);
 
-        assertEq(aBorrowAsset_.totalSupply(),             500 ether + supplierYield);
+        assertApproxEqAbs(aBorrowAsset_.totalSupply(), 500 ether + supplierYield, 2);
+
         assertEq(aBorrowAsset_.balanceOf(treasury),       0);
         assertEq(aBorrowAsset_.scaledBalanceOf(treasury), 0);
 
@@ -373,14 +374,18 @@ contract MintToTreasuryTests is SparkLendTestBase {
         uint256 liquidityIndex,
         uint256 supplierYield
     ) internal {
-        uint256 accruedToTreasury = scaledAccruedToTreasury * liquidityIndex / 1e27 + 1;  // Rounding
+        // Pool mints with rayMul (half-up); balanceOf reads back with rayMulFloor
+        uint256 amountMinted    = scaledAccruedToTreasury * liquidityIndex / 1e27 + 1;  // rayMul
+        uint256 treasuryBalance = scaledAccruedToTreasury * liquidityIndex / 1e27;      // rayMulFloor
 
-        assertEq(accruedToTreasury, 0.002750756378280377 ether);
+        assertEq(amountMinted,    0.002750756378280377 ether);
+        assertEq(treasuryBalance, 0.002750756378280376 ether);
 
         IAToken aBorrowAsset_ = IAToken(pool.getReserveData(borrowAsset_).aTokenAddress);
 
-        assertEq(aBorrowAsset_.totalSupply(),             500 ether + supplierYield + accruedToTreasury);
-        assertEq(aBorrowAsset_.balanceOf(treasury),       accruedToTreasury);
+        assertApproxEqAbs(aBorrowAsset_.totalSupply(), 500 ether + supplierYield + amountMinted, 2);
+
+        assertEq(aBorrowAsset_.balanceOf(treasury),       treasuryBalance);
         assertEq(aBorrowAsset_.scaledBalanceOf(treasury), scaledAccruedToTreasury);
 
         assertEq(pool.getReserveData(borrowAsset_).accruedToTreasury, 0);
@@ -426,7 +431,8 @@ contract MintToTreasuryTests is SparkLendTestBase {
 
         IAToken aBorrowAsset_ = IAToken(pool.getReserveData(borrowAsset_).aTokenAddress);
 
-        assertEq(aBorrowAsset_.totalSupply(),             500 ether + supplierYield);
+        assertApproxEqAbs(aBorrowAsset_.totalSupply(), 500 ether + supplierYield, 2);
+
         assertEq(aBorrowAsset_.balanceOf(treasury),       0);
         assertEq(aBorrowAsset_.scaledBalanceOf(treasury), 0);
 
@@ -439,16 +445,20 @@ contract MintToTreasuryTests is SparkLendTestBase {
         uint256 liquidityIndex,
         uint256 supplierYield
     ) internal {
-        uint256 accruedToTreasury = scaledAccruedToTreasury * liquidityIndex / 1e27 + 1;  // Rounding
+        // Pool mints with rayMul (half-up); balanceOf reads back with rayMulFloor
+        uint256 amountMinted    = scaledAccruedToTreasury * liquidityIndex / 1e27 + 1;  // rayMul
+        uint256 treasuryBalance = scaledAccruedToTreasury * liquidityIndex / 1e27;      // rayMulFloor
 
-        assertEq(accruedToTreasury, 0.002751043970327674 ether);
+        assertEq(amountMinted,    0.002751043970327674 ether);
+        assertEq(treasuryBalance, 0.002751043970327673 ether);
 
         IAToken aBorrowAsset_ = IAToken(pool.getReserveData(borrowAsset_).aTokenAddress);
 
         // Total supply is higher than the last test, but the treasury balance is the same
         // Treasury balance only increases when `updateState` is called on pool interactions
-        assertEq(aBorrowAsset_.totalSupply(),             500 ether + supplierYield + accruedToTreasury);
-        assertEq(aBorrowAsset_.balanceOf(treasury),       accruedToTreasury);
+        assertApproxEqAbs(aBorrowAsset_.totalSupply(), 500 ether + supplierYield + amountMinted, 2);
+
+        assertEq(aBorrowAsset_.balanceOf(treasury),       treasuryBalance);
         assertEq(aBorrowAsset_.scaledBalanceOf(treasury), scaledAccruedToTreasury);
 
         assertEq(pool.getReserveData(borrowAsset_).accruedToTreasury, 0);

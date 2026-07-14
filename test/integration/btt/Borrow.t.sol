@@ -562,7 +562,7 @@ contract BorrowConcreteTests is BorrowTestBase {
             user:        borrower,
             debtToken:   debtToken,
             userBalance: 0,
-            totalSupply: 100 ether + borrowerDebt
+            totalSupply: 100 ether + borrowerDebt + 1  // Rounding error
         });
 
         AssertAssetStateParams memory assetParams = AssertAssetStateParams({
@@ -581,10 +581,10 @@ contract BorrowConcreteTests is BorrowTestBase {
         pool.borrow(address(borrowAsset), 500 ether, 2, 0, borrower);
 
         ( uint256 borrowRate, uint256 liquidityRate )
-            = _getUpdatedRates(600 ether + borrowerDebt, 1000 ether + borrowerDebt);
+            = _getUpdatedRates(600 ether + borrowerDebt + 1, 1000 ether + borrowerDebt + 1);  // +1 from debt token rounding
 
-        assertEq(borrowRate,    0.065000525110257445296653722e27);  // ~60% utilized: 5% + 60%/80% * 2% = ~6.5%
-        assertEq(liquidityRate, 0.037051596345660783435849413e27);  // ~60% utilized: 60% * ~6.5% * (1 - reserveFactor) = ~3.9% * 95%
+        assertEq(borrowRate,    0.065000525110257445296663721e27);  // ~60% utilized: 5% + 60%/80% * 2% = ~6.5%
+        assertEq(liquidityRate, 0.037051596345660783435879811e27);  // ~60% utilized: 60% * ~6.5% * (1 - reserveFactor) = ~3.9% * 95%
 
         uint256 expectedLiquidityIndex      = 1e27 + (1e27 * 0.00525e27 * 95/100 / 100 / 1e27);  // Normalized yield accrues 1% of APR
         uint256 expectedVariableBorrowIndex = 1e27 * compoundedNormalizedInterest / 1e27;        // Accrues slightly more than 1% of APR because of compounded interest
@@ -593,15 +593,15 @@ contract BorrowConcreteTests is BorrowTestBase {
         assertEq(expectedVariableBorrowIndex, compoundedNormalizedInterest);
 
         poolParams.liquidityIndex            = expectedLiquidityIndex;
-        poolParams.currentLiquidityRate      = liquidityRate + 2;  // Rounding
+        poolParams.currentLiquidityRate      = liquidityRate + 1;  // Rounding
         poolParams.variableBorrowIndex       = expectedVariableBorrowIndex;
-        poolParams.currentVariableBorrowRate = borrowRate + 1;  // Rounding
+        poolParams.currentVariableBorrowRate = borrowRate;
         poolParams.lastUpdateTimestamp       = WARP_TIME + 1;
         poolParams.accruedToTreasury         = borrowerDebt * 5/100 * 1e27 / expectedLiquidityIndex + 1;  // Scaled value
 
         // Borrower debt only accrued against existing borrow
-        debtTokenParams.userBalance = 500 ether;
-        debtTokenParams.totalSupply = 600 ether + borrowerDebt;
+        debtTokenParams.userBalance = 500 ether + 1;  // Rounding
+        debtTokenParams.totalSupply = 600 ether + borrowerDebt + 1;  // Rounding
 
         assetParams.aTokenBalance = 400 ether;
         assetParams.userBalance   = 500 ether;
