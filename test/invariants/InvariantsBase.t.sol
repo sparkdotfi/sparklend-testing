@@ -11,8 +11,7 @@ import { LendingHandler } from "test/invariants/handlers/LendingHandler.sol";
 
 // Stateful invariant setup: multi-actor, multi-reserve, both assets collateral + borrowable, with
 // seeded liquidity and an active borrow so the liquidity/borrow indices actually drift above RAY
-// during the campaign (the existing RoundingInvariants.t.sol runs at index == RAY, where floor/ceil
-// never diverge — this harness deliberately does not).
+// during the campaign — floor/ceil rounding never diverges at index == RAY.
 contract InvariantsBase is SparkLendTestBase {
 
     LendingHandler internal handler;

@@ -151,27 +151,20 @@ contract GhostCollateralFlagTests is SparkLendTestBase {
         );
     }
 
-    // The stuck flag cannot be cleared through the intended path: disabling collateral reverts on
-    // a zero balance.
-    function test_ghostFlag_isUnclearable() public {
+    // The stuck flag cannot be cleared through the intended path — disabling collateral reverts
+    // on a zero balance. The only escape is to re-supply the asset (note: a 1-wei supply itself
+    // reverts once the index is above 1.0, because the floored scaled mint rounds to zero — the
+    // user must supply at least ~ceil(index/RAY) wei), then disable, then withdraw.
+    function test_ghostFlag_isUnclearableUntilResupply() public {
         uint256 ghostAmount = _setupGhostWindow();
 
         vm.prank(victim);
         aCollateralAsset.transfer(sink, ghostAmount);
 
+        // Disabling collateral directly reverts on the zeroed balance.
         vm.prank(victim);
         vm.expectRevert(bytes("43"));  // Errors.UNDERLYING_BALANCE_ZERO
         pool.setUserUseReserveAsCollateral(address(collateralAsset), false);
-    }
-
-    // The only escape is to re-supply the asset (note: a 1-wei supply itself reverts once the index
-    // is above 1.0, because the floored scaled mint rounds to zero — the user must supply at least
-    // ~ceil(index/RAY) wei), then disable, then withdraw.
-    function test_ghostFlag_escapeRequiresResupply() public {
-        uint256 ghostAmount = _setupGhostWindow();
-
-        vm.prank(victim);
-        aCollateralAsset.transfer(sink, ghostAmount);
 
         // A 1-wei re-supply reverts (floored scaled mint rounds to zero at index > 1.0).
         deal(address(collateralAsset), victim, 1);

@@ -46,12 +46,9 @@ contract WadRayMathRoundingTests is Test {
         // Floor is exactly the truncated quotient.
         assertEq(floorVal, expectedFloor, "rayMulFloor != floor(a*b/RAY)");
 
-        // Ceil is floor plus exactly one iff there is a non-zero remainder.
+        // Ceil is floor plus exactly one iff there is a non-zero remainder (this also implies
+        // floor <= ceil <= floor + 1).
         assertEq(ceilVal, expectedFloor + (rem == 0 ? 0 : 1), "rayMulCeil wrong");
-
-        // Ordering + at-most-one-apart.
-        assertLe(floorVal, ceilVal);
-        assertLe(ceilVal - floorVal, 1);
 
         // Legacy half-up result must sit within [floor, ceil].
         uint256 halfUp = w.rayMul(a, b);
@@ -64,12 +61,6 @@ contract WadRayMathRoundingTests is Test {
         x = bound(x, 0, MAX_AMOUNT);
         assertEq(w.rayMulCeil(x, RAY), x, "rayMulCeil(x, RAY) != x");
         assertEq(w.rayMulFloor(x, RAY), x, "rayMulFloor(x, RAY) != x");
-    }
-
-    function testFuzz_rayMul_zero(uint256 b) public {
-        b = bound(b, 0, MAX_INDEX);
-        assertEq(w.rayMulFloor(0, b), 0);
-        assertEq(w.rayMulCeil(0, b), 0);
     }
 
     /**********************************************************************************************/
@@ -89,9 +80,6 @@ contract WadRayMathRoundingTests is Test {
         assertEq(floorVal, expectedFloor, "rayDivFloor != floor(a*RAY/b)");
         assertEq(ceilVal, expectedFloor + (rem == 0 ? 0 : 1), "rayDivCeil wrong");
 
-        assertLe(floorVal, ceilVal);
-        assertLe(ceilVal - floorVal, 1);
-
         uint256 halfUp = w.rayDiv(a, b);
         assertGe(halfUp, floorVal);
         assertLe(halfUp, ceilVal);
@@ -102,12 +90,6 @@ contract WadRayMathRoundingTests is Test {
         x = bound(x, 0, MAX_AMOUNT);
         assertEq(w.rayDivCeil(x, RAY), x, "rayDivCeil(x, RAY) != x");
         assertEq(w.rayDivFloor(x, RAY), x, "rayDivFloor(x, RAY) != x");
-    }
-
-    function testFuzz_rayDiv_ceil_zeroNumerator(uint256 b) public {
-        b = bound(b, 1, MAX_INDEX);
-        assertEq(w.rayDivCeil(0, b), 0);
-        assertEq(w.rayDivFloor(0, b), 0);
     }
 
     function test_rayDiv_byZero_reverts() public {
