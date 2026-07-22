@@ -73,15 +73,15 @@ contract TransferFromRoundingTests is TransferFromTestBase {
         vm.prank(spender);
         aBorrowAsset.transferFrom(owner, recipient, 2);
 
-        assertEq(aBorrowAsset.scaledBalanceOf(owner),     98);  // ciel(2 / 1.6) = 2
+        assertEq(aBorrowAsset.scaledBalanceOf(owner),     98);  // ceil(2 / 1.6) = 2
         assertEq(aBorrowAsset.scaledBalanceOf(recipient), 2);
 
         assertEq(aBorrowAsset.balanceOf(owner),          156);  // floor(98 * 1.6) = 156
         assertEq(aBorrowAsset.balanceOf(recipient),      3);    // floor(2 * 1.6)  = 3
 
         // Allowance spent is the difference between the initial sender balance and the new balance after the transfer
-        // floor(100 * 1.6) - floor((100 - ciel(2 / 1.6)) * 1.6) = 4
-        // 160 - floor(100 - 2) * 1.6) = 4
+        // floor(100 * 1.6) - floor((100 - ceil(2 / 1.6)) * 1.6) = 4
+        // 160 - floor((100 - 2) * 1.6) = 4
         // 160 - 156 = 4
         assertEq(aBorrowAsset.allowance(owner, spender), 6);
     }
@@ -104,14 +104,14 @@ contract TransferFromRoundingTests is TransferFromTestBase {
         vm.prank(spender);
         aBorrowAsset.transferFrom(owner, recipient, 2);
 
-        assertEq(aBorrowAsset.scaledBalanceOf(owner),     98);  // ciel(2 / 1.5) = 2
+        assertEq(aBorrowAsset.scaledBalanceOf(owner),     98);  // ceil(2 / 1.5) = 2
         assertEq(aBorrowAsset.scaledBalanceOf(recipient), 2);
 
         assertEq(aBorrowAsset.balanceOf(owner),     147);  // floor(98 * 1.5) = 147
         assertEq(aBorrowAsset.balanceOf(recipient), 3);    // floor(2 * 1.6)  = 3
 
         // Allowance spent is the difference between the initial sender balance and the new balance after the transfer
-        // floor(100 * 1.5) - floor((100 - ciel(2 / 1.5)) * 1.5) = 3
+        // floor(100 * 1.5) - floor(((100 - ceil(2 / 1.5)) * 1.5) = 3
         // 150 - floor(100 - 2) * 1.5) = 3
         // 150 - 147 = 3
         // 3 > 2, so the allowance is set to 0
