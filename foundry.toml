@@ -19,4 +19,11 @@ remappings = [
 [fuzz]
 runs = 1000
 
+# Modest defaults so `forge test` smoke-runs the stateful suite quickly. Raise runs/depth
+# (e.g. FOUNDRY_INVARIANT_RUNS=256 FOUNDRY_INVARIANT_DEPTH=200) for a real campaign.
+[invariant]
+runs = 32
+depth = 40
+fail_on_revert = false
+
 # See more config options https://github.com/foundry-rs/foundry/tree/master/config
