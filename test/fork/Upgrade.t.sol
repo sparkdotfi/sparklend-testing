@@ -3,15 +3,15 @@ pragma solidity ^0.8.0;
 
 import { Ethereum } from "sparklend-address-registry/Ethereum.sol";
 
-import { ConfiguratorInputTypes } from "sparklend-v1-core/contracts/protocol/libraries/types/ConfiguratorInputTypes.sol";
-import { DataTypes }              from "sparklend-v1-core/contracts/protocol/libraries/types/DataTypes.sol";
-import { ReserveConfiguration }   from "sparklend-v1-core/contracts/protocol/libraries/configuration/ReserveConfiguration.sol";
-
 import { SafeERC20 } from "sparklend-v1-core/contracts/dependencies/openzeppelin/contracts/SafeERC20.sol";
 import { IERC20 }    from "sparklend-v1-core/contracts/dependencies/openzeppelin/contracts/IERC20.sol";
 
 import { BaseImmutableAdminUpgradeabilityProxy }
     from "sparklend-v1-core/contracts/protocol/libraries/aave-upgradeability/BaseImmutableAdminUpgradeabilityProxy.sol";
+
+import { ConfiguratorInputTypes } from "sparklend-v1-core/contracts/protocol/libraries/types/ConfiguratorInputTypes.sol";
+import { DataTypes }              from "sparklend-v1-core/contracts/protocol/libraries/types/DataTypes.sol";
+import { ReserveConfiguration }   from "sparklend-v1-core/contracts/protocol/libraries/configuration/ReserveConfiguration.sol";
 
 import { AToken }            from "sparklend-v1-core/contracts/protocol/tokenization/AToken.sol";
 import { VariableDebtToken } from "sparklend-v1-core/contracts/protocol/tokenization/VariableDebtToken.sol";
@@ -42,9 +42,9 @@ contract UpgradeTest is ForkTestBase {
 
         // Step 1: Get the state of the pool and reserves before the upgrade
 
-        ReserveState[] memory statesBefore = new ReserveState[](reserves.length);
+        ReserveState[] memory beforeStates = new ReserveState[](reserves.length);
         for (uint256 i = 0; i < reserves.length; i++) {
-            statesBefore[i] = _getReserveState(reserves[i]);
+            beforeStates[i] = _getReserveState(reserves[i]);
         }
 
         address poolImplBefore         = _getPoolImplementation();
@@ -67,27 +67,27 @@ contract UpgradeTest is ForkTestBase {
         for (uint256 i = 0; i < reserves.length; i++) {
             address asset = reserves[i];
 
-            AToken currentAToken = AToken(statesBefore[i].aToken);
+            AToken currentAToken = AToken(beforeStates[i].aToken);
 
             poolConfigurator.updateAToken(ConfiguratorInputTypes.UpdateATokenInput({
-                asset:                asset,
-                treasury:             currentAToken.RESERVE_TREASURY_ADDRESS(),
-                incentivesController: address(currentAToken.getIncentivesController()),
-                name:                 statesBefore[i].aTokenName,
-                symbol:               statesBefore[i].aTokenSymbol,
-                implementation:       address(newATokenImpl),
-                params:               ""
+                asset                : asset,
+                treasury             : currentAToken.RESERVE_TREASURY_ADDRESS(),
+                incentivesController : address(currentAToken.getIncentivesController()),
+                name                 : beforeStates[i].aTokenName,
+                symbol               : beforeStates[i].aTokenSymbol,
+                implementation       : address(newATokenImpl),
+                params               : ""
             }));
 
-            VariableDebtToken currentDebtToken = VariableDebtToken(statesBefore[i].variableDebtToken);
+            VariableDebtToken currentDebtToken = VariableDebtToken(beforeStates[i].variableDebtToken);
 
             poolConfigurator.updateVariableDebtToken(ConfiguratorInputTypes.UpdateDebtTokenInput({
-                asset:                asset,
-                incentivesController: address(currentDebtToken.getIncentivesController()),
-                name:                 statesBefore[i].debtTokenName,
-                symbol:               statesBefore[i].debtTokenSymbol,
-                implementation:       address(newVarDebtTokenImpl),
-                params:               ""
+                asset                : asset,
+                incentivesController : address(currentDebtToken.getIncentivesController()),
+                name                 : beforeStates[i].debtTokenName,
+                symbol               : beforeStates[i].debtTokenSymbol,
+                implementation       : address(newVarDebtTokenImpl),
+                params               : ""
             }));
         }
 
@@ -108,14 +108,16 @@ contract UpgradeTest is ForkTestBase {
         assertEq(pool.FLASHLOAN_PREMIUM_TOTAL(),     flashLoanPremiumBefore);
 
         address[] memory reservesAfterPoolUpgrade = pool.getReservesList();
+
         assertEq(reservesAfterPoolUpgrade.length, reserves.length);
+
         for (uint256 i = 0; i < reserves.length; i++) {
             assertEq(reservesAfterPoolUpgrade[i], reserves[i]);
         }
 
         // Check before/after state for every single reserve
         for (uint256 i = 0; i < reserves.length; i++) {
-            ReserveState memory beforeUpgrade = statesBefore[i];
+            ReserveState memory beforeUpgrade = beforeStates[i];
             ReserveState memory afterUpgrade  = _getReserveState(reserves[i]);
 
             assertEq(afterUpgrade.aToken,              beforeUpgrade.aToken);
@@ -134,16 +136,38 @@ contract UpgradeTest is ForkTestBase {
         for (uint256 i = 0; i < reserves.length; i++) {
             address asset = reserves[i];
 
-            if (pool.getReserveData(asset).configuration.getFrozen()) continue;
+            DataTypes.ReserveData memory reserveData = pool.getReserveData(asset);
+
+            if (reserveData.configuration.getFrozen()) continue;
+
+            uint256 supplyCap = reserveData.configuration.getSupplyCap();
+            if (supplyCap != 0) {
+                if (
+                    AToken(reserveData.aTokenAddress).totalSupply() + 1_000 >
+                    supplyCap * 10 ** reserveData.configuration.getDecimals()
+                ) continue;
+            }
 
             address supplier = makeAddr(string.concat("supplier", vm.toString(i)));
+
             _fundAndSupply(asset, supplier, 1_000);
             _withdraw(supplier, asset, 500);
 
-            if (!pool.getReserveData(asset).configuration.getBorrowingEnabled()) continue;
+            reserveData = pool.getReserveData(asset);
+
+            if (!reserveData.configuration.getBorrowingEnabled()) continue;
+
+            uint256 borrowCap = reserveData.configuration.getBorrowCap();
+            if (borrowCap != 0) {
+                if (
+                    VariableDebtToken(reserveData.variableDebtTokenAddress).totalSupply() + 1_000 >
+                    borrowCap * 10 ** reserveData.configuration.getDecimals()
+                ) continue;
+            }
 
             address borrower = makeAddr(string.concat("borrower", vm.toString(i)));
-            _supplyAndUseAsCollateral(borrower, Ethereum.WETH, 100 ether);
+
+            _supplyAndUseAsCollateral(borrower, Ethereum.WETH, 1 ether);
             _borrow(borrower, asset, 1_000);
             _fundAndRepay(asset, borrower, 1_000);
         }
@@ -154,6 +178,7 @@ contract UpgradeTest is ForkTestBase {
         return BaseImmutableAdminUpgradeabilityProxy(payable(address(pool))).implementation();
     }
 
+    // Fund an account with an asset by transferring the asset to the account instead of using deal.
     function _fund(address asset, address user, uint256 amount) internal {
         vm.prank(pool.getReserveData(asset).aTokenAddress);
         IERC20(asset).safeTransfer(user, amount);

@@ -18,7 +18,7 @@ contract ForkTestBase is UserActions {
     IPoolConfigurator      constant poolConfigurator      = IPoolConfigurator(Ethereum.POOL_CONFIGURATOR);
 
     function setUp() public {
-        vm.createSelectFork(getChain("mainnet").rpcUrl, 19483900);  // March 21, 2024
+        vm.createSelectFork(getChain("mainnet").rpcUrl, 25585000);  // July 22, 2026
     }
 
     /**********************************************************************************************/
