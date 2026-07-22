@@ -75,19 +75,21 @@ contract LiquidationFeeDoubleRoundTests is Test {
         uint256 a = bound(aSeed, 1, B - 1);
         uint256 b = B - a; // whole budget consumed (full-collateral liquidation shape)
 
-        uint256 scaledA = w.rayDivCeil(a, index);
-        uint256 scaledB = w.rayDivCeil(b, index);
+        uint256 scaledA  = w.rayDivCeil(a, index);
+        uint256 scaledB  = w.rayDivCeil(b, index);
+        uint256 combined = w.rayDivCeil(a + b, index);
 
         // The single combined conversion is ALWAYS within the scaled balance (safety holds).
-        assertLe(w.rayDivCeil(a + b, index), scaled, "combined conversion must stay within S");
+        assertLe(combined, scaled, "combined conversion must stay within S");
 
-        // If the split overshoots, it is by at most 1 scaled unit beyond the combined value.
-        if (scaledA + scaledB > scaled) {
-            assertLe(
-                scaledA + scaledB - w.rayDivCeil(a + b, index),
-                1,
-                "two-leg overshoot exceeds the expected 1-unit split artifact"
-            );
-        }
+        // The split legs bracket the combined conversion exactly: never less than it, and at most
+        // 1 scaled unit more. Asserted unconditionally so the property never passes vacuously —
+        // the overshoot case itself is pinned by test_twoLegCeil_overshoots_concrete.
+        assertGe(scaledA + scaledB, combined, "split legs rounded below the combined conversion");
+        assertLe(
+            scaledA + scaledB,
+            combined + 1,
+            "two-leg overshoot exceeds the expected 1-unit split artifact"
+        );
     }
 }

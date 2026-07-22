@@ -1173,15 +1173,26 @@ contract ACLManagerACLTests is SparkLendTestBase {
     address public ADMIN       = admin;
     address public SET_ADDRESS = makeAddr("setAddress");
 
-    // address(this) == 0x7fa9385be102ac3eac297483dd6233d62b3e1496, role is DEFAULT_ADMIN_ROLE
-    // NOTE: Using raw string for address because vm.toString keeps checksum while the error message does not
-    bytes public defaultAdminError
-        = "AccessControl: account 0x7fa9385be102ac3eac297483dd6233d62b3e1496 is missing role 0x0000000000000000000000000000000000000000000000000000000000000000";
+    // NOTE: OpenZeppelin's AccessControl error message renders the account lowercase (no
+    //       checksum), while vm.toString checksums — so build the lowercase hex here instead of
+    //       hardcoding the test contract's address (which changes across foundry versions).
+    bytes public defaultAdminError = abi.encodePacked(
+        "AccessControl: account ",
+        _toLowerHexString(address(this)),
+        " is missing role 0x0000000000000000000000000000000000000000000000000000000000000000"
+    );
 
-    function setUp() public override {
-        super.setUp();
-
-        assertEq(address(this), 0x7FA9385bE102ac3EAc297483Dd6233D62b3e1496);
+    function _toLowerHexString(address account) internal pure returns (string memory) {
+        bytes memory alphabet = "0123456789abcdef";
+        bytes20 value = bytes20(account);
+        bytes memory str = new bytes(42);
+        str[0] = "0";
+        str[1] = "x";
+        for (uint256 i; i < 20; ++i) {
+            str[2 + i * 2] = alphabet[uint8(value[i] >> 4)];
+            str[3 + i * 2] = alphabet[uint8(value[i] & 0x0f)];
+        }
+        return string(str);
     }
 
     /**********************************************************************************************/
@@ -1324,7 +1335,7 @@ contract ACLManagerACLTests is SparkLendTestBase {
         vm.stopPrank();
 
         bytes memory errorMessage = abi.encodePacked(
-            "AccessControl: account 0x7fa9385be102ac3eac297483dd6233d62b3e1496 is missing role ",
+            "AccessControl: account ", _toLowerHexString(address(this)), " is missing role ",
             vm.toString(bytes32("TEST_ROLE_ADMIN"))
         );
 
@@ -1344,7 +1355,7 @@ contract ACLManagerACLTests is SparkLendTestBase {
         vm.stopPrank();
 
         bytes memory errorMessage = abi.encodePacked(
-            "AccessControl: account 0x7fa9385be102ac3eac297483dd6233d62b3e1496 is missing role ",
+            "AccessControl: account ", _toLowerHexString(address(this)), " is missing role ",
             vm.toString(bytes32("TEST_ROLE_ADMIN"))
         );
 

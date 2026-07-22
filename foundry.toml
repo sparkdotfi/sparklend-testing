@@ -21,9 +21,11 @@ runs = 1000
 
 # Modest defaults so `forge test` smoke-runs the stateful suite quickly. Raise runs/depth
 # (e.g. FOUNDRY_INVARIANT_RUNS=256 FOUNDRY_INVARIANT_DEPTH=200) for a real campaign.
+# fail_on_revert stays true: every handler action is try/catch-wrapped, so a revert reaching
+# the runner means a handler bug (bad bound, broken setup), not an expected protocol revert.
 [invariant]
 runs = 32
 depth = 40
-fail_on_revert = false
+fail_on_revert = true
 
 # See more config options https://github.com/foundry-rs/foundry/tree/master/config

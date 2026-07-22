@@ -56,8 +56,24 @@ contract InvariantsBase is SparkLendTestBase {
 
         handler = new LendingHandler(pool, actors, assetList);
 
-        // bootstrap is also an aToken holder — register it so conservation sums are closed.
-        // (handler seeds holders from `actors`; add bootstrap explicitly.)
+        // Fuzz only the action functions. This keeps the campaign off the handler's view
+        // functions and auto-generated array getters (which revert on out-of-bounds indices and
+        // would trip fail_on_revert). Every action is internally try/catch-wrapped, so any revert
+        // that reaches the runner is a handler bug by construction.
+        bytes4[] memory selectors = new bytes4[](11);
+        selectors[0]  = handler.supply.selector;
+        selectors[1]  = handler.withdraw.selector;
+        selectors[2]  = handler.withdrawMax.selector;
+        selectors[3]  = handler.borrow.selector;
+        selectors[4]  = handler.repay.selector;
+        selectors[5]  = handler.repayMax.selector;
+        selectors[6]  = handler.transferAToken.selector;
+        selectors[7]  = handler.setCollateral.selector;
+        selectors[8]  = handler.mintToTreasury.selector;
+        selectors[9]  = handler.liquidate.selector;
+        selectors[10] = handler.warp.selector;
+
         targetContract(address(handler));
+        targetSelector(FuzzSelector({ addr: address(handler), selectors: selectors }));
     }
 }

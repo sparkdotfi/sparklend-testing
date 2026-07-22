@@ -149,8 +149,8 @@ contract WadRayMathRoundingTests is Test {
         uint256 underlying   = w.rayMulCeil(scaled, index);   // balanceOf (debt) rounds up
         uint256 backToScaled = w.rayDivFloor(underlying, index); // burn rounds down
 
-        assertLe(backToScaled, scaled, "floor(ceil(s*i)/i) exceeded s");
-        // For index >= RAY the round-trip is exact: a full repay clears the whole scaled debt.
+        // For index >= RAY the round-trip is exact: a full repay clears the whole scaled debt,
+        // never more (which subsumes the <= direction) and never leaves dust.
         assertEq(backToScaled, scaled, "full repay left scaled dust (index >= RAY should be exact)");
     }
 

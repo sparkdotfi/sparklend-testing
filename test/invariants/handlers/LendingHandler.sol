@@ -19,32 +19,20 @@ contract LendingHandler is Test {
     address[] public actors;
     address[] public assets;
 
-    // Ghost accounting for round-trip / conservation invariants.
-    mapping(address => uint256) public sumSupplied;    // asset => cumulative supplied
-    mapping(address => uint256) public sumWithdrawn;   // asset => cumulative withdrawn
-    mapping(address => uint256) public sumBorrowed;    // asset => cumulative borrowed
-    mapping(address => uint256) public sumRepaid;      // asset => cumulative repaid
-
-    // Every address that could hold an aToken/debt balance, for exact conservation sums.
-    address[] public holders;
-    mapping(address => bool) internal _isHolder;
-
+    // Per-action attempt/success counters, logged by invariant_callSummary. A success rate that
+    // collapses to zero for an action means the campaign stopped covering that path.
     uint256 public callCount;
+    mapping(string => uint256) public attempts;
+    mapping(string => uint256) public successes;
 
     constructor(IPool pool_, address[] memory actors_, address[] memory assets_) {
         pool   = pool_;
         actors = actors_;
         assets = assets_;
-        for (uint256 i; i < actors_.length; ++i) _addHolder(actors_[i]);
     }
 
     function actorsLength() external view returns (uint256) { return actors.length; }
     function assetsLength() external view returns (uint256) { return assets.length; }
-    function holdersLength() external view returns (uint256) { return holders.length; }
-
-    function _addHolder(address a) internal {
-        if (!_isHolder[a]) { _isHolder[a] = true; holders.push(a); }
-    }
 
     function _actor(uint256 seed) internal view returns (address) {
         return actors[seed % actors.length];
@@ -60,6 +48,7 @@ contract LendingHandler is Test {
 
     function supply(uint256 actorSeed, uint256 assetSeed, uint256 amount, bool asCollateral) public {
         callCount++;
+        attempts["supply"]++;
         address actor = _actor(actorSeed);
         address asset = _asset(assetSeed);
         amount = bound(amount, 1, 1_000_000 ether);
@@ -68,7 +57,7 @@ contract LendingHandler is Test {
         vm.startPrank(actor);
         IERC20(asset).approve(address(pool), amount);
         try pool.supply(asset, amount, actor, 0) {
-            sumSupplied[asset] += amount;
+            successes["supply"]++;
             if (asCollateral) {
                 try pool.setUserUseReserveAsCollateral(asset, true) {} catch {}
             }
@@ -78,6 +67,7 @@ contract LendingHandler is Test {
 
     function withdraw(uint256 actorSeed, uint256 assetSeed, uint256 amount) public {
         callCount++;
+        attempts["withdraw"]++;
         address actor = _actor(actorSeed);
         address asset = _asset(assetSeed);
         uint256 bal   = AToken(_aToken(asset)).balanceOf(actor);
@@ -85,25 +75,43 @@ contract LendingHandler is Test {
         amount = bound(amount, 1, bal);
 
         vm.prank(actor);
-        try pool.withdraw(asset, amount, actor) returns (uint256 withdrawn) {
-            sumWithdrawn[asset] += withdrawn;
+        try pool.withdraw(asset, amount, actor) {
+            successes["withdraw"]++;
+        } catch {}
+    }
+
+    // Exercises the amount == type(uint256).max sentinel: the full-withdraw path is where
+    // executeWithdraw's `amountToWithdraw == userBalance` equality (the flag-clearing seam the
+    // rounding change touches) actually runs.
+    function withdrawMax(uint256 actorSeed, uint256 assetSeed) public {
+        callCount++;
+        attempts["withdrawMax"]++;
+        address actor = _actor(actorSeed);
+        address asset = _asset(assetSeed);
+        if (AToken(_aToken(asset)).balanceOf(actor) == 0) return;
+
+        vm.prank(actor);
+        try pool.withdraw(asset, type(uint256).max, actor) {
+            successes["withdrawMax"]++;
         } catch {}
     }
 
     function borrow(uint256 actorSeed, uint256 assetSeed, uint256 amount) public {
         callCount++;
+        attempts["borrow"]++;
         address actor = _actor(actorSeed);
         address asset = _asset(assetSeed);
         amount = bound(amount, 1, 100_000 ether);
 
         vm.prank(actor);
         try pool.borrow(asset, amount, 2, 0, actor) {
-            sumBorrowed[asset] += amount;
+            successes["borrow"]++;
         } catch {}
     }
 
     function repay(uint256 actorSeed, uint256 assetSeed, uint256 amount) public {
         callCount++;
+        attempts["repay"]++;
         address actor = _actor(actorSeed);
         address asset = _asset(assetSeed);
         uint256 debt  = IERC20(_variableDebt(asset)).balanceOf(actor);
@@ -113,9 +121,29 @@ contract LendingHandler is Test {
         deal(asset, actor, IERC20(asset).balanceOf(actor) + amount);
         vm.startPrank(actor);
         IERC20(asset).approve(address(pool), amount);
-        try pool.repay(asset, amount, 2, actor) returns (uint256 repaid) {
-            sumRepaid[asset] += repaid;
+        try pool.repay(asset, amount, 2, actor) {
+            successes["repay"]++;
         } catch {}
+        vm.stopPrank();
+    }
+
+    // Exercises the amount == type(uint256).max sentinel (full repay of a ceil-rounded debt).
+    function repayMax(uint256 actorSeed, uint256 assetSeed) public {
+        callCount++;
+        attempts["repayMax"]++;
+        address actor = _actor(actorSeed);
+        address asset = _asset(assetSeed);
+        uint256 debt  = IERC20(_variableDebt(asset)).balanceOf(actor);
+        if (debt == 0) return;
+
+        // Fund generously: debt accrues between balanceOf and the repay's updateState.
+        deal(asset, actor, IERC20(asset).balanceOf(actor) + debt + 1 ether);
+        vm.startPrank(actor);
+        IERC20(asset).approve(address(pool), type(uint256).max);
+        try pool.repay(asset, type(uint256).max, 2, actor) {
+            successes["repayMax"]++;
+        } catch {}
+        IERC20(asset).approve(address(pool), 0);
         vm.stopPrank();
     }
 
@@ -123,6 +151,7 @@ contract LendingHandler is Test {
         public
     {
         callCount++;
+        attempts["transferAToken"]++;
         address from  = _actor(fromSeed);
         address to    = _actor(toSeed);
         address asset = _asset(assetSeed);
@@ -131,20 +160,51 @@ contract LendingHandler is Test {
         if (bal == 0) return;
         amount = bound(amount, 1, bal);
 
-        _addHolder(to);
         vm.prank(from);
-        try aToken.transfer(to, amount) {} catch {}
+        try aToken.transfer(to, amount) {
+            successes["transferAToken"]++;
+        } catch {}
     }
 
-    function liquidate(uint256 liqSeed, uint256 userSeed, uint256 collSeed, uint256 debtSeed, uint256 amount)
-        public
-    {
+    function setCollateral(uint256 actorSeed, uint256 assetSeed, bool enabled) public {
         callCount++;
+        attempts["setCollateral"]++;
+        address actor = _actor(actorSeed);
+        address asset = _asset(assetSeed);
+
+        vm.prank(actor);
+        try pool.setUserUseReserveAsCollateral(asset, enabled) {
+            successes["setCollateral"]++;
+        } catch {}
+    }
+
+    function mintToTreasury(uint256 assetSeed) public {
+        callCount++;
+        attempts["mintToTreasury"]++;
+        address[] memory list = new address[](1);
+        list[0] = _asset(assetSeed);
+
+        try pool.mintToTreasury(list) {
+            successes["mintToTreasury"]++;
+        } catch {}
+    }
+
+    function liquidate(
+        uint256 liqSeed,
+        uint256 userSeed,
+        uint256 collSeed,
+        uint256 debtSeed,
+        uint256 amount,
+        bool    receiveAToken
+    ) public {
+        callCount++;
+        attempts["liquidate"]++;
         address liquidator = _actor(liqSeed);
         address user       = _actor(userSeed);
         address collateral = _asset(collSeed);
         address debtAsset  = _asset(debtSeed);
         if (collateral == debtAsset) return;
+        if (liquidator == user) return;
 
         uint256 debt = IERC20(_variableDebt(debtAsset)).balanceOf(user);
         if (debt == 0) return;
@@ -153,14 +213,20 @@ contract LendingHandler is Test {
         deal(debtAsset, liquidator, IERC20(debtAsset).balanceOf(liquidator) + amount);
         vm.startPrank(liquidator);
         IERC20(debtAsset).approve(address(pool), amount);
-        try pool.liquidationCall(collateral, debtAsset, user, amount, false) {} catch {}
+        // receiveAToken=true covers the aToken-transfer path (no burn); the liquidator is an
+        // actor, so the holder set used by the conservation invariants stays closed.
+        try pool.liquidationCall(collateral, debtAsset, user, amount, receiveAToken) {
+            successes["liquidate"]++;
+        } catch {}
         vm.stopPrank();
     }
 
     function warp(uint256 timeSeed) public {
         callCount++;
+        attempts["warp"]++;
         uint256 jump = bound(timeSeed, 1 hours, 180 days);
         vm.warp(block.timestamp + jump);
+        successes["warp"]++;
     }
 
     /**********************************************************************************************/

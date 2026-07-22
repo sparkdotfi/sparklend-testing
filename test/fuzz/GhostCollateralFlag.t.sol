@@ -31,6 +31,7 @@ contract GhostCollateralFlagTests is SparkLendTestBase {
     address victim   = makeAddr("victim");
     address borrower = makeAddr("borrower");
     address sink     = makeAddr("sink");
+    address lp       = makeAddr("lp");  // extra collateral liquidity so a full withdraw has cash
 
     function setUp() public override {
         super.setUp();
@@ -54,6 +55,12 @@ contract GhostCollateralFlagTests is SparkLendTestBase {
     // warping ~10 years so interest accrues.
     function _growCollateralIndex() internal {
         _supplyAndUseAsCollateral(borrower, address(borrowAsset), 10_000_000 ether);
+
+        // Extra collateralAsset cash (not withdrawn) so the victim's full-balance withdraw in the
+        // withdraw-path PoC is covered even with the borrow outstanding. Utilization stays low
+        // enough that the index still accrues above RAY over the warp (asserted downstream).
+        _supply(lp, address(collateralAsset), 3_000_000 ether);
+
         vm.prank(borrower);
         pool.borrow(address(collateralAsset), 200_000 ether, 2, 0, borrower);
 
@@ -83,7 +90,10 @@ contract GhostCollateralFlagTests is SparkLendTestBase {
         return (0, false);
     }
 
-    function _setupGhostTransfer() internal returns (uint256 ghostAmount) {
+    // Sets up the ghost window; the returned amount works for both the transfer and withdraw
+    // paths (both consume scaled balance with rayDivCeil and gate the flag-clear on underlying
+    // equality).
+    function _setupGhostWindow() internal returns (uint256 ghostAmount) {
         _supplyAndUseAsCollateral(victim, address(collateralAsset), 1_000_000 ether);
         _growCollateralIndex();
 
@@ -105,7 +115,7 @@ contract GhostCollateralFlagTests is SparkLendTestBase {
     /**********************************************************************************************/
 
     function test_ghostFlag_transfer_leavesFlagOnZeroBalance() public {
-        uint256 ghostAmount = _setupGhostTransfer();
+        uint256 ghostAmount = _setupGhostWindow();
 
         vm.prank(victim);
         aCollateralAsset.transfer(sink, ghostAmount);
@@ -119,10 +129,32 @@ contract GhostCollateralFlagTests is SparkLendTestBase {
         );
     }
 
+    /**********************************************************************************************/
+    /*** PoC: the withdraw path strands the flag the same way                                   ***/
+    /**********************************************************************************************/
+
+    // executeWithdraw clears the flag only when amountToWithdraw == userBalance (underlying
+    // equality), but the burn consumes rayDivCeil(amount) scaled units — the same seam as
+    // finalizeTransfer, so the ghost state is reachable without ever touching transfer.
+    function test_ghostFlag_withdraw_leavesFlagOnZeroBalance() public {
+        uint256 ghostAmount = _setupGhostWindow();
+
+        vm.prank(victim);
+        pool.withdraw(address(collateralAsset), ghostAmount, victim);
+
+        // Current (buggy) behavior: scaled balance is emptied, but the flag is still set.
+        // WHEN FIXED: the second assertion below flips (flag should be false); invert it then.
+        assertEq(aCollateralAsset.scaledBalanceOf(victim), 0, "scaled balance should be emptied");
+        assertTrue(
+            _isCollateral(address(collateralAsset), victim),
+            "GHOST FLAG (F1): collateral flag stuck true after ghost withdraw"
+        );
+    }
+
     // The stuck flag cannot be cleared through the intended path: disabling collateral reverts on
     // a zero balance.
     function test_ghostFlag_isUnclearable() public {
-        uint256 ghostAmount = _setupGhostTransfer();
+        uint256 ghostAmount = _setupGhostWindow();
 
         vm.prank(victim);
         aCollateralAsset.transfer(sink, ghostAmount);
@@ -136,7 +168,7 @@ contract GhostCollateralFlagTests is SparkLendTestBase {
     // is above 1.0, because the floored scaled mint rounds to zero — the user must supply at least
     // ~ceil(index/RAY) wei), then disable, then withdraw.
     function test_ghostFlag_escapeRequiresResupply() public {
-        uint256 ghostAmount = _setupGhostTransfer();
+        uint256 ghostAmount = _setupGhostWindow();
 
         vm.prank(victim);
         aCollateralAsset.transfer(sink, ghostAmount);
