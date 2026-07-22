@@ -12,7 +12,7 @@ contract ReserveLogicWrapper is Pool {
 
     // Necessary to upgrade from the existing Pool implementation
     function getRevision() internal pure override returns (uint256) {
-        return 0x2;
+        return 0x5;
     }
 
     /**********************************************************************************************/

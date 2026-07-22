@@ -3,8 +3,9 @@ pragma solidity ^0.8.0;
 
 import "forge-std/Test.sol";
 
-import { IPool }             from "sparklend-v1-core/contracts/interfaces/IPool.sol";
-import { IPoolConfigurator } from "sparklend-v1-core/contracts/interfaces/IPoolConfigurator.sol";
+import { IPool }                  from "sparklend-v1-core/contracts/interfaces/IPool.sol";
+import { IPoolAddressesProvider } from "sparklend-v1-core/contracts/interfaces/IPoolAddressesProvider.sol";
+import { IPoolConfigurator }      from "sparklend-v1-core/contracts/interfaces/IPoolConfigurator.sol";
 
 import { Ethereum } from "sparklend-address-registry/Ethereum.sol";
 
@@ -12,8 +13,9 @@ import { UserActions } from "src/UserActions.sol";
 
 contract ForkTestBase is UserActions {
 
-    IPool             constant pool             = IPool(Ethereum.POOL);
-    IPoolConfigurator constant poolConfigurator = IPoolConfigurator(Ethereum.POOL_CONFIGURATOR);
+    IPool                  constant pool                  = IPool(Ethereum.POOL);
+    IPoolAddressesProvider constant poolAddressesProvider = IPoolAddressesProvider(Ethereum.POOL_ADDRESSES_PROVIDER);
+    IPoolConfigurator      constant poolConfigurator      = IPoolConfigurator(Ethereum.POOL_CONFIGURATOR);
 
     function setUp() public {
         vm.createSelectFork(getChain("mainnet").rpcUrl, 19483900);  // March 21, 2024
