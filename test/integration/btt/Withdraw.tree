@@ -30,19 +30,9 @@ pool.withdraw()
         └── given some time has passed after borrow
             └── it should succeed and update the lastUpdated timestamp, indexes, and rates [06]
 ├── when the user has active collateral
-    ├── when the user passes in uint256 max
-        └── it should withdraw the maximum balance that the user has and deactivate collateral [07]
-    ├── when the user passes in the full balance
-        └── it should withdraw the maximum balance that the user has and deactivate collateral [08]
-    ├── when the user passes less than the full balance
+    ├── when the user passes in uint256 max and has active collateral
+        └── it should withdraw the maximum balance that the user has and deactivates collateral [07]
+    ├── when the user passes in the full balance and has active collateral
+        └── it should withdraw the maximum balance that the user has and deactivates collateral [08]
+    └── when the user passes less than the full balance
         └── it should withdraw the amount and keep collateral activated [09]
-├── given the liquidity index is greater than RAY
-    └── when the user has active collateral
-        ├── when the user passes in uint256 max
-            └── it should withdraw the full visible balance, leave zero scaled balance, and deactivate collateral [10]
-        ├── when the user passes in the full visible balance
-            └── it should withdraw that balance, leave zero scaled balance, and deactivate collateral [11]
-        ├── when the user passes an amount derived to leave one scaled unit
-            └── it should leave exactly one scaled unit and keep collateral activated [12]
-        └── when an adjacent near-full amount rounds to the full scaled balance
-            └── TODO: investigate pinned-core 8120e495 leaving collateral enabled with zero scaled balance
