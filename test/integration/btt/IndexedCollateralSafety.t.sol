@@ -18,6 +18,7 @@ contract IndexedCollateralSafetyPoolWrapper is ReserveLogicWrapper {
 
     constructor(IPoolAddressesProvider provider) ReserveLogicWrapper(provider) {}
 
+    // Construct the stale flag directly so these tests isolate recovery behavior from its creation path.
     function setUsingAsCollateralForTest(address user, uint256 reserveId, bool enabled) external {
         _usersConfig[user].setUsingAsCollateral(reserveId, enabled);
     }
@@ -27,13 +28,16 @@ contract IndexedCollateralSafetyTests is SparkLendTestBase {
     uint128 constant RAY = 1e27;
     uint128 constant BASE_RATE_RAY = 0.05e27;
 
+    // At this index, 1 unit scales to zero while 2 scales to one and that scaled unit is visible as 3.
     uint128 constant TARGET_LIQUIDITY_INDEX = 2530773485048679075952786560;
     uint256 constant FIRST_UNMINTABLE_AMOUNT = 1;
     uint256 constant FIRST_MINTABLE_AMOUNT = 2;
     uint256 constant FIRST_MINTABLE_VISIBLE_BALANCE = 3;
 
+    // 50% LTV, 60% threshold, 100.01% bonus, 18 decimals, active, and 5% reserve factor.
     uint256 constant COLLATERAL_CONFIG = uint256(50_00) | (uint256(60_00) << 16) | (uint256(100_01) << 32)
         | (uint256(18) << 48) | (uint256(1) << 56) | (uint256(5_00) << 64);
+    // Reserve zero's collateral bit in the interleaved user-configuration bitmap.
     uint256 constant COLLATERAL_USER_CONFIG = 2;
 
     address owner = makeAddr("owner");
@@ -101,6 +105,7 @@ contract IndexedCollateralSafetyTests is SparkLendTestBase {
         testPool = new IndexedCollateralSafetyPoolWrapper(poolAddressesProvider);
         testPool.initialize(poolAddressesProvider);
 
+        // Install the wrapper as the Pool proxy implementation so it operates on live Pool storage.
         vm.prank(admin);
         poolAddressesProvider.setPoolImpl(address(testPool));
 
@@ -108,6 +113,7 @@ contract IndexedCollateralSafetyTests is SparkLendTestBase {
     }
 
     modifier givenSyntheticEnabledCollateralFlagWithZeroScaledBalance() {
+        // Rebind the wrapper interface to the proxy; the implementation instance has separate storage.
         testPool = IndexedCollateralSafetyPoolWrapper(address(pool));
         testPool.cumulateToLiquidityIndex(address(collateralAsset), RAY, TARGET_LIQUIDITY_INDEX - RAY);
         testPool.setUsingAsCollateralForTest(owner, 0, true);

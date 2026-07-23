@@ -29,6 +29,7 @@ Request changes for any material false-negative or false-positive risk:
 - Fuzz bounds omit the phase that activates the behavior, such as an index above RAY, meaningful decimals/prices, or both sides of a scaled-to-visible collapse boundary.
 - An invariant swallows unexpected reverts, leaves critical success counts unenforced, or uses an unproven open holder/debtor set.
 - A base-suite change was not audited across inherited entry points and empty overrides.
+- A comment makes a materially false or overbroad safety, range, rounding, public-reachability, or historical claim that misstates the behavior or test scope.
 
 Adversarial questions: Can an earlier guard mask the expected error? Can one unintended storage field change without detection? Is the oracle independent or a restatement of production code? Can every critical action have zero successes?
 
@@ -57,6 +58,17 @@ Suggest improvements for maintainability and diagnosis:
 - Verification reporting omits exact commands or environment-dependent skips.
 - Historical attribution conflates an individual commit with inherited parent-range changes.
 
+## Comment Review
+
+Apply these checks to every added or changed comment; grade a failure by its semantic impact rather than treating all comment defects as low severity:
+
+- Compare adjacent team-authored tests. Require a comment only where the reason is non-obvious: fixture/test-only seams, synthetic state, proxy/delegatecall or storage rebinding, units or rounding sources, packed configuration or bitmap constants, magic boundaries/indexes, fuzz-domain bounds, unreachable branches, or scope/public-reachability limitations.
+- Verify each claim against the pinned source and exact configured domain. Challenge words such as `safe`, `always`, `above`, `below`, `cannot`, and `no public path`; a fixture observation must not become a universal range or rounding claim.
+- Trace public reachability through all relevant exposed entry points before accepting a reachability claim. If the test only isolates recovery from state creation, require the comment to say that and no more.
+- Check that packed constants decode the pinned layout, numeric comments identify units and actual rounding sources, fuzz-bound comments explain the retained/excluded behavior, and unreachable-branch comments name the earlier guard.
+- Reject narration of syntax, names, tree prose, formulas, assertions, direct forwards, getters, and routine setup. Prefer removal when code already explains why.
+- Keep historical explanations only when provenance is necessary and verified; prefer stable current-mechanism rationale.
+
 ## Acceptance Gate
 
 A test is merge-ready only when all are true:
@@ -72,5 +84,6 @@ A test is merge-ready only when all are true:
 - Fuzz/invariant evidence is non-vacuous and complements deterministic behavior tests.
 - Narrow affected tests, inherited suites, build, and broader tests were run as available, with skips explicit.
 - The diff is focused and no production, dependency, configuration, or gitlink workaround is present.
+- Comments are necessary why-comments, accurate for the pinned revision and stated domain, and no broader than the evidence.
 
 If no findings remain, state that explicitly and identify residual risks such as unavailable fork RPC, unrun broad tests, or behavior outside the pinned revision.

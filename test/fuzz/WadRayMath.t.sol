@@ -9,6 +9,7 @@ contract WadRayMathTests is Test {
     uint256 constant RAY = 1e27;
     uint256 constant HALF_RAY = 0.5e27;
 
+    // Keep the oracle arithmetic below uint256 overflow while covering large token amounts and nonidentity indexes.
     uint256 constant TOKEN_MAX = 1e40;
     uint256 constant INDEX_MAX = 1e6 * RAY;
 

@@ -83,7 +83,16 @@ For invariant tests:
 - Include max sentinels and multi-action sequences deliberately.
 - Use sufficient CI depth/runs only after deterministic reachability; deep optional campaigns supplement rather than define assurance.
 
-## 8. Audit Inheritance
+## 8. Comment Only The Why
+
+1. Inspect adjacent team-authored tests before adding comments; match their density and terminology rather than commenting every setup step.
+2. Add a short why-comment only when rationale would otherwise be hidden: a fixture or test-only seam, synthetic state, proxy/delegatecall mechanics or storage rebinding, a unit or rounding source, a packed configuration or bitmap constant, a magic boundary or index choice, a fuzz-domain bound, an unreachable branch, or a scope/public-reachability limitation.
+3. Put the comment at the seam and state its exact reason and scope. Tie numeric behavior to the configured value (for example, "at this index") instead of turning one observation into a range or universal rounding rule.
+4. Trace claims against the pinned source before writing them. Do not claim safety, a universal range, a rounding guarantee, absence of a public path, or historical causation unless the evidence proves that exact scope; describe an isolated test purpose instead when that is all the fixture establishes.
+5. For an unreachable branch, name the earlier guard that makes it unreachable. For a fuzz bound, explain the behavior retained or unrelated domain excluded rather than restating the bound.
+6. Do not narrate syntax, duplicate a name or tree prose, transcribe a formula, paraphrase an assertion, or comment direct forwarding and routine setup. Remove the comment when the code and names already answer why.
+
+## 9. Audit Inheritance
 
 Whenever a base BTT suite or virtual call seam changes:
 
@@ -93,7 +102,7 @@ Whenever a base BTT suite or virtual call seam changes:
 4. Confirm inherited modifiers, setup, caller semantics, and names remain correct.
 5. Run inherited contracts, not only the edited base contract.
 
-## 9. Verify Narrow To Broad
+## 10. Verify Narrow To Broad
 
 Run the smallest useful command first, then expand as available:
 

@@ -30,6 +30,7 @@ When reviewing or revising an existing test, also read:
 7. Derive time deltas from the fixture timestamp while preserving the repository baseline unless the behavior intentionally changes it.
 8. Audit inherited equivalent entry points and empty overrides whenever a shared base suite changes.
 9. Keep fuzz properties narrow and deterministic boundaries explicit. Require invariant actions and safety properties to execute meaningfully rather than pass vacuously.
-10. Verify from narrow to broad and report exactly what ran.
+10. Match adjacent team-authored comment style: add short why-comments only at non-obvious test seams, and do not narrate self-explanatory code or overstate a claim's proven scope.
+11. Verify from narrow to broad and report exactly what ran.
 
 Do not modify protocol code, submodule gitlinks, dependency metadata, or global test configuration as a workaround for a test. If the intended safety property fails on the pinned core, surface the protocol blocker; do not choose only green inputs, gate the property, or assert the defect as expected behavior. A different protocol revision is a separate protocol/dependency change.
