@@ -31,18 +31,19 @@ contract LiquidationFeeDoubleRoundTests is SparkLendTestBase {
         uint256 balanceOfUser = _wadRayMathWrapper.rayMulFloor(scaledBalanceOfUser, index);
 
         // The budget respects the user's displayed balance
-        assertLe(actualCollateralToLiquidate + liquidationProtocolFeeAmount, balanceOfUser);
+        assertEq(actualCollateralToLiquidate + liquidationProtocolFeeAmount <= balanceOfUser, true);
 
         // The combined burn would be safe
-        assertLe(_wadRayMathWrapper.rayDivCeil(actualCollateralToLiquidate + liquidationProtocolFeeAmount, index), scaledBalanceOfUser);
+        assertEq(_wadRayMathWrapper.rayDivCeil(actualCollateralToLiquidate + liquidationProtocolFeeAmount, index) <= scaledBalanceOfUser, true);
 
         // But the two SEPARATE ceil legs overshoot the scaled balance.
         uint256 scaledA = _wadRayMathWrapper.rayDivCeil(actualCollateralToLiquidate, index);
         uint256 scaledB = _wadRayMathWrapper.rayDivCeil(liquidationProtocolFeeAmount, index);
-        assertGt(scaledA + scaledB, scaledBalanceOfUser);
 
-        assertEq(scaledA, 146);
-        assertEq(scaledB, 2);
+        assertEq(scaledA + scaledB >= scaledBalanceOfUser, true);
+
+        assertEq(scaledA,             146);
+        assertEq(scaledB,             2);
         assertEq(scaledBalanceOfUser, 147);
     }
 
@@ -67,11 +68,11 @@ contract LiquidationFeeDoubleRoundTests is SparkLendTestBase {
         uint256 combined = _wadRayMathWrapper.rayDivCeil(actualCollateralToLiquidate + liquidationProtocolFeeAmount, index);
 
         // The single combined conversion is always within the scaled balance.
-        assertLe(combined, scaledBalanceOfUser);
+        assertEq(combined <= scaledBalanceOfUser, true);
 
         // The split legs bracket the combined conversion exactly: never less than it and at most 1 scaled unit more.
-        assertGe(scaledA + scaledB, combined);
-        assertLe(scaledA + scaledB, combined + 1);
+        assertEq(scaledA + scaledB >= combined,     true);
+        assertEq(scaledA + scaledB <= combined + 1, true);
     }
 
 }
