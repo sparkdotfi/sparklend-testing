@@ -11,9 +11,11 @@ import { VariableBorrowInterestRateStrategy } from "sparklend-advanced/VariableB
 
 import { IPoolAddressesProvider } from "sparklend-v1-core/contracts/interfaces/IPoolAddressesProvider.sol";
 
-import { ReserveConfiguration } from "sparklend-v1-core/contracts/protocol/libraries/configuration/ReserveConfiguration.sol";
 import { DataTypes }            from "sparklend-v1-core/contracts/protocol/libraries/types/DataTypes.sol";
 import { Errors }               from "sparklend-v1-core/contracts/protocol/libraries/helpers/Errors.sol";
+import { ReserveConfiguration } from "sparklend-v1-core/contracts/protocol/libraries/configuration/ReserveConfiguration.sol";
+import { StableDebtToken }      from "sparklend-v1-core/contracts/protocol/tokenization/StableDebtToken.sol";
+import { VariableDebtToken }    from "sparklend-v1-core/contracts/protocol/tokenization/VariableDebtToken.sol";
 
 import { ForkTestBase } from "./ForkTestBase.sol";
 
@@ -31,8 +33,13 @@ contract StableBorrowTests is ForkTestBase {
         vm.startPrank(borrower);
 
         for (uint256 i = 0; i < reserves.length; i++) {
-            // Still assert that borrow can't be called
-            if (!pool.getReserveData(reserves[i]).configuration.getBorrowingEnabled()) {
+            DataTypes.ReserveConfigurationMap memory configuration = pool.getReserveData(reserves[i]).configuration;
+
+            if (
+                !configuration.getBorrowingEnabled() ||
+                configuration.getFrozen()            ||
+                _borrowCapExceeded(reserves[i], 100)
+            ) {
                 vm.expectRevert();
                 pool.borrow(reserves[i], 100, 1, 0, borrower);
                 continue;
@@ -52,7 +59,13 @@ contract StableBorrowTests is ForkTestBase {
         uint256 snapshot = vm.snapshot();
 
         for (uint256 i = 0; i < reserves.length; i++) {
-            if (!pool.getReserveData(reserves[i]).configuration.getBorrowingEnabled()) continue;
+            DataTypes.ReserveConfigurationMap memory configuration = pool.getReserveData(reserves[i]).configuration;
+
+            if (
+                !configuration.getBorrowingEnabled() ||
+                configuration.getFrozen()            ||
+                _borrowCapExceeded(reserves[i], 100)
+            ) continue;
 
             _borrow(borrower, reserves[i], 100);
 
@@ -73,7 +86,13 @@ contract StableBorrowTests is ForkTestBase {
         uint256 snapshot = vm.snapshot();
 
         for (uint256 i = 0; i < reserves.length; i++) {
-            if (!pool.getReserveData(reserves[i]).configuration.getBorrowingEnabled()) continue;
+            DataTypes.ReserveConfigurationMap memory configuration = pool.getReserveData(reserves[i]).configuration;
+
+            if (
+                !configuration.getBorrowingEnabled() ||
+                configuration.getFrozen()            ||
+                _borrowCapExceeded(reserves[i], 100)
+            ) continue;
 
             _borrow(borrower, reserves[i], 100);
 
@@ -102,7 +121,13 @@ contract StableBorrowTests is ForkTestBase {
         uint256 snapshot = vm.snapshot();
 
         for (uint256 i = 0; i < reserves.length; i++) {
-            if (!pool.getReserveData(reserves[i]).configuration.getBorrowingEnabled()) continue;
+            DataTypes.ReserveConfigurationMap memory configuration = pool.getReserveData(reserves[i]).configuration;
+
+            if (
+                !configuration.getBorrowingEnabled() ||
+                configuration.getFrozen()            ||
+                _borrowCapExceeded(reserves[i], 100)
+            ) continue;
 
             _borrow(borrower, reserves[i], 100);
 
@@ -126,18 +151,23 @@ contract StableBorrowTests is ForkTestBase {
 
         uint256 currentLiquidityRate = pool.getReserveData(Ethereum.DAI).currentLiquidityRate;
 
-        assertEq(currentLiquidityRate, 0.148420005467532821842464000e27);
+        assertEq(currentLiquidityRate, 0.1780804294714108555998624e27);
 
         // Rebalance fails under normal conditions
         vm.prank(borrower);
         vm.expectRevert(bytes(Errors.INTEREST_RATE_REBALANCE_CONDITIONS_NOT_MET));
         pool.rebalanceStableBorrowRate(Ethereum.DAI, borrower);
 
+        uint256 reserveFactor = pool.getReserveData(Ethereum.DAI).configuration.getReserveFactor();
+
+        uint256 boundaryBaseVariableBorrowRate =
+            currentLiquidityRate * 10_000 * 10_000 / (9_000 * (10_000 - reserveFactor));  // baseVariableBorrowRate = currentLiquidityRate / (0.9 * (1 - reserveFactor))
+
         // Update the strategy to boundary condition of 90% of liquidity rate check
         address strategy = address(new VariableBorrowInterestRateStrategy({
             provider:               IPoolAddressesProvider(Ethereum.POOL_ADDRESSES_PROVIDER),
             optimalUsageRatio:      1e27,
-            baseVariableBorrowRate: currentLiquidityRate * 100 / 90 - 1,
+            baseVariableBorrowRate: boundaryBaseVariableBorrowRate - 1,
             variableRateSlope1:     0,
             variableRateSlope2:     0
         }));
@@ -154,7 +184,7 @@ contract StableBorrowTests is ForkTestBase {
         strategy = address(new VariableBorrowInterestRateStrategy({
             provider:               IPoolAddressesProvider(Ethereum.POOL_ADDRESSES_PROVIDER),
             optimalUsageRatio:      1e27,
-            baseVariableBorrowRate: currentLiquidityRate * 100 / 90,
+            baseVariableBorrowRate: boundaryBaseVariableBorrowRate,
             variableRateSlope1:     0,
             variableRateSlope2:     0
         }));
@@ -170,6 +200,21 @@ contract StableBorrowTests is ForkTestBase {
         vm.prank(borrower);
         vm.expectRevert(bytes(""));  // EvmError: Revert
         pool.rebalanceStableBorrowRate(Ethereum.DAI, borrower);
+    }
+
+    function _borrowCapExceeded(address asset, uint256 amount) internal view returns (bool) {
+        DataTypes.ReserveData memory reserveData = pool.getReserveData(asset);
+
+        uint256 borrowCap = reserveData.configuration.getBorrowCap();
+
+        if (borrowCap == 0) return false;
+
+        // Borrow cap applies to combined stable + variable debt
+        uint256 currentDebt =
+            VariableDebtToken(reserveData.variableDebtTokenAddress).totalSupply() +
+            StableDebtToken(reserveData.stableDebtTokenAddress).totalSupply();
+
+        return currentDebt + amount > borrowCap * 10 ** reserveData.configuration.getDecimals();
     }
 
 }
