@@ -116,7 +116,7 @@ contract GhostCollateralFlagTests is SparkLendTestBase {
         vm.prank(victim);
         pool.supply(address(collateralAsset), 1, victim, 0);
 
-        // Supplying a non-dust amount succeeds. The flag can then finally be cleared.
+        // Have to supply more than one to get over rounding to zero
         _supply(victim, address(collateralAsset), 2);
 
         vm.prank(victim);
