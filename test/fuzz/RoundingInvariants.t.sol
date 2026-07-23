@@ -69,9 +69,7 @@ contract RoundingInvariantTests is SparkLendTestBase {
 
         vm.warp(block.timestamp + warpTime);
 
-        // At index > RAY a repay below index/RAY floors its scaled debt burn to zero and reverts
-        // (INVALID_BURN_AMOUNT) — a documented dust behavior, not the rounding property under
-        // test — so bound both amounts above that threshold.
+        // At index > RAY a repay below index/RAY floors its scaled debt burn to zero and reverts.
         uint256 index = pool.getReserveNormalizedVariableDebt(address(borrowAsset));
 
         borrowAmount = bound(borrowAmount, index / 1e27 + 1, 400_000 ether);
