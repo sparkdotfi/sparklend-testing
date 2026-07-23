@@ -42,10 +42,10 @@ contract TransferFromRoundingTests is TransferFromTestBase {
     function test_transferFrom_revertsWhenAllowanceIsInsufficientBoundary() public {
         _supply(owner, address(borrowAsset), 100);
 
-        _setLiquidityIndex(1.5e27);  // 1.5
+        _setLiquidityIndex(1.5e27);
 
         vm.prank(owner);
-        aBorrowAsset.approve(spender, 1);  // less than the requested amount
+        aBorrowAsset.approve(spender, 1);
 
         vm.prank(spender);
         vm.expectRevert(abi.encodeWithSelector(ERC20InsufficientAllowance.selector, spender, 1, 2));
@@ -89,7 +89,7 @@ contract TransferFromRoundingTests is TransferFromTestBase {
     function test_transferFrom_allowanceFullyConsumedWhenExceedingResultingAmount() public {
         _supply(owner, address(borrowAsset), 100);
 
-        _setLiquidityIndex(1.5e27);  // 1.5
+        _setLiquidityIndex(1.5e27);
 
         vm.prank(owner);
         aBorrowAsset.approve(spender, 2);
