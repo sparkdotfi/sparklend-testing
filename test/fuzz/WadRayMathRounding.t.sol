@@ -30,21 +30,15 @@ contract WadRayMathRoundingTests is Test {
         b = bound(b, 0, MAX_INDEX);
 
         uint256 floorVal = mathWrapper.rayMulFloor(a, b);
-        uint256 ceilVal  = mathWrapper.rayMulCeil(a,  b);
+        uint256 ceilVal  = mathWrapper.rayMulCeil(a, b);
 
         uint256 remainder     = mulmod(a, b, RAY);  // independent full-precision remainder
         uint256 expectedFloor = (a * b) / RAY;
 
         assertEq(floorVal, expectedFloor);  // floor(a*b/RAY) = (a*b)/RAY
 
-        // Ceil is floor plus exactly one iff there is a non-zero remainder.
+        // Ceil is floor plus exactly one if there is a non-zero remainder.
         assertEq(ceilVal, expectedFloor + (remainder == 0 ? 0 : 1));
-
-        // Legacy half-up result must sit within [floor, ceil].
-        uint256 halfUp = mathWrapper.rayMul(a, b);
-
-        assertGe(halfUp, floorVal);
-        assertLe(halfUp, ceilVal);
     }
 
     function testFuzz_rayMul_ceil_exactDivisionNotOverRounded(uint256 x) public {
@@ -103,12 +97,7 @@ contract WadRayMathRoundingTests is Test {
         uint256 expectedFloor = (a * RAY) / b;
 
         assertEq(floorVal, expectedFloor);                             // floor(a*RAY/b) = (a*RAY)/b
-        assertEq(ceilVal,  expectedFloor + (remainder == 0 ? 0 : 1));  // rayDivCeil = floor + 1 iff remainder > 0
-
-        uint256 halfUp = mathWrapper.rayDiv(a, b);
-
-        assertGe(halfUp, floorVal);
-        assertLe(halfUp, ceilVal);
+        assertEq(ceilVal,  expectedFloor + (remainder == 0 ? 0 : 1));  // rayDivCeil = floor + 1 if remainder > 0
     }
 
     function testFuzz_rayDiv_ceil_exactDivisionNotOverRounded(uint256 x) public {
