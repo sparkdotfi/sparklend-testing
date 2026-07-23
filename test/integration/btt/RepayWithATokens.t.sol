@@ -491,8 +491,8 @@ contract RepayWithATokensConcreteTests is RepayWithATokensTestBase {
         AssertDebtTokenStateParams memory debtTokenParams = AssertDebtTokenStateParams({
             user:        borrower,
             debtToken:   debtToken,
-            userBalance: 500 ether + borrowerDebt,
-            totalSupply: 500 ether + borrowerDebt
+            userBalance: 500 ether + borrowerDebt + 1,
+            totalSupply: 500 ether + borrowerDebt + 1
         });
 
         AssertATokenStateParams memory aTokenParams = AssertATokenStateParams({
@@ -527,8 +527,8 @@ contract RepayWithATokensConcreteTests is RepayWithATokensTestBase {
         debtTokenParams.userBalance = 0;
         debtTokenParams.totalSupply = 0;
 
-        aTokenParams.userBalance = (1000 ether + supplierYield) - (500 ether + borrowerDebt);  // Doesn't include the + 1
-        aTokenParams.totalSupply = (1000 ether + supplierYield) - (500 ether + borrowerDebt);
+        aTokenParams.userBalance = (1000 ether + supplierYield - 1) - (500 ether + borrowerDebt + 1);
+        aTokenParams.totalSupply = (1000 ether + supplierYield - 1) - (500 ether + borrowerDebt + 1);
 
         _assertPoolReserveState(poolParams);
         _assertDebtTokenState(debtTokenParams);
@@ -567,8 +567,8 @@ contract RepayWithATokensConcreteTests is RepayWithATokensTestBase {
         AssertDebtTokenStateParams memory debtTokenParams = AssertDebtTokenStateParams({
             user:        borrower,
             debtToken:   debtToken,
-            userBalance: 500 ether + borrowerDebt,
-            totalSupply: 500 ether + borrowerDebt
+            userBalance: 500 ether + borrowerDebt + 1,  // rayMulCeil
+            totalSupply: 500 ether + borrowerDebt + 1
         });
 
         AssertATokenStateParams memory aTokenParams = AssertATokenStateParams({
@@ -593,16 +593,17 @@ contract RepayWithATokensConcreteTests is RepayWithATokensTestBase {
 
         poolParams.liquidityIndex            = expectedLiquidityIndex;
         poolParams.variableBorrowIndex       = expectedVariableBorrowIndex;
-        poolParams.currentLiquidityRate      = 0;
-        poolParams.currentVariableBorrowRate = 0.05e27;
+        // Floor repay leaves 1 scaled unit; rates use half-up totalDebt=1
+        poolParams.currentLiquidityRate      = 1e5 * 0.95;
+        poolParams.currentVariableBorrowRate = 0.05e27 + 5e4;
         poolParams.lastUpdateTimestamp       = WARP_TIME + 1;
         poolParams.accruedToTreasury         = borrowerDebt * 5/100 * 1e27 / expectedLiquidityIndex;  // Scaled value
 
-        debtTokenParams.userBalance = 0;
-        debtTokenParams.totalSupply = 0;
+        debtTokenParams.userBalance = 2;  // 1 scaled * rayMulCeil
+        debtTokenParams.totalSupply = 2;
 
-        aTokenParams.userBalance = (1000 ether + supplierYield) - (500 ether + borrowerDebt);  // Matches exactly
-        aTokenParams.totalSupply = (1000 ether + supplierYield) - (500 ether + borrowerDebt);
+        aTokenParams.userBalance = (1000 ether + supplierYield) - (500 ether + borrowerDebt) - 1;  // rayMulFloor
+        aTokenParams.totalSupply = (1000 ether + supplierYield) - (500 ether + borrowerDebt) - 1;
 
         _assertPoolReserveState(poolParams);
         _assertDebtTokenState(debtTokenParams);
@@ -641,8 +642,8 @@ contract RepayWithATokensConcreteTests is RepayWithATokensTestBase {
         AssertDebtTokenStateParams memory debtTokenParams = AssertDebtTokenStateParams({
             user:        borrower,
             debtToken:   debtToken,
-            userBalance: 500 ether + borrowerDebt,
-            totalSupply: 500 ether + borrowerDebt
+            userBalance: 500 ether + borrowerDebt + 1,  // rayMulCeil
+            totalSupply: 500 ether + borrowerDebt + 1
         });
 
         AssertATokenStateParams memory aTokenParams = AssertATokenStateParams({
@@ -680,16 +681,16 @@ contract RepayWithATokensConcreteTests is RepayWithATokensTestBase {
 
         poolParams.liquidityIndex            = expectedLiquidityIndex;
         poolParams.variableBorrowIndex       = expectedVariableBorrowIndex;
-        poolParams.currentLiquidityRate      = liquidityRate;
-        poolParams.currentVariableBorrowRate = borrowRate;
+        poolParams.currentLiquidityRate      = 2e5 * 0.95;     // ~2/500e18 utilization
+        poolParams.currentVariableBorrowRate = 0.05e27 + 1e5;
         poolParams.lastUpdateTimestamp       = WARP_TIME + 1;
         poolParams.accruedToTreasury         = borrowerDebt * 5/100 * 1e27 / expectedLiquidityIndex;  // Scaled value
 
-        debtTokenParams.userBalance = 1;
-        debtTokenParams.totalSupply = 1;
+        debtTokenParams.userBalance = 3;  // 2 scaled * rayMulCeil
+        debtTokenParams.totalSupply = 3;
 
-        aTokenParams.userBalance = (1000 ether + supplierYield) - (500 ether + borrowerDebt - 1);  // Less than the debt
-        aTokenParams.totalSupply = (1000 ether + supplierYield) - (500 ether + borrowerDebt - 1);
+        aTokenParams.userBalance = remainingSupply - 1;  // rayMulFloor
+        aTokenParams.totalSupply = remainingSupply - 1;
 
         _assertPoolReserveState(poolParams);
         _assertDebtTokenState(debtTokenParams);
