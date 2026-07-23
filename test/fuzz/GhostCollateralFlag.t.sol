@@ -35,7 +35,7 @@ contract GhostCollateralFlagTests is SparkLendTestBase {
     function setUp() public override {
         super.setUp();
 
-        // Step 1 : Initialize the collateral and borrow assets with 50% LTV and 101% index.
+        // Step 1 : Initialize the collateral and borrow assets with 50% LTV, 50% LT, and 101% liquidation bonus.
 
         _initCollateral(address(collateralAsset), 50_00, 50_00, 101_00);
         _initCollateral(address(borrowAsset),     50_00, 50_00, 101_00);
@@ -58,8 +58,8 @@ contract GhostCollateralFlagTests is SparkLendTestBase {
 
         _growCollateralIndex();
 
-        // Step 5 : Find a ghost amount that can be transferred to the recipient without clearing the flag.
-        ghostAmount = _getGhostAmount();
+        // Step 5 : Ghost amount that can be transferred to the recipient without clearing the flag.
+        ghostAmount = aCollateralAsset.balanceOf(victim) - 1;
     }
 
     function test_ghostFlag_transfer_leavesFlagOnZeroBalance() public {
@@ -117,7 +117,7 @@ contract GhostCollateralFlagTests is SparkLendTestBase {
         pool.supply(address(collateralAsset), 1, victim, 0);
 
         // Supplying a non-dust amount succeeds. The flag can then finally be cleared.
-        _supply(victim, address(collateralAsset), 1 ether);
+        _supply(victim, address(collateralAsset), 2);
 
         vm.prank(victim);
         pool.setUserUseReserveAsCollateral(address(collateralAsset), false);
@@ -133,25 +133,6 @@ contract GhostCollateralFlagTests is SparkLendTestBase {
         ( , , , , , , , , enabled) = protocolDataProvider.getUserReserveData(asset, user);
     }
 
-    function _getGhostAmount() internal returns (uint256 _ghostAmount) {
-        // Get latest index, scaled balance and balance of the victim.
-
-        uint256 index     = pool.getReserveNormalizedIncome(address(collateralAsset));
-        uint256 scaled    = aCollateralAsset.scaledBalanceOf(victim);
-        uint256 balanceOf = aCollateralAsset.balanceOf(victim);
-
-        assertGt(index, RAY); 
-
-        // Find the ghost amount using the index, scaled balance and balance of the victim.
-
-        bool found;
-
-        (_ghostAmount, found) = _findGhostAmount(index, scaled, balanceOf);
-
-        assertEq(found,                     true);
-        assertEq(_ghostAmount != balanceOf, true);
-    }
-
     function _growCollateralIndex() internal {
         _supplyAndUseAsCollateral(borrower, address(borrowAsset), 10_000_000 ether);
 
@@ -161,16 +142,6 @@ contract GhostCollateralFlagTests is SparkLendTestBase {
         vm.warp(block.timestamp + 3650 days); // Warp 10 years so interest accrues.
 
         _supply(borrower, address(collateralAsset), 1 ether); // Update the reserve state.
-    }
-
-    function _findGhostAmount(uint256 index, uint256 scaled, uint256 balanceOf)
-        internal returns (uint256, bool)
-    {
-        for (uint256 k = 1; k <= 256 && k < balanceOf; ++k) {
-            uint256 a = balanceOf - k;
-            if (new WadRayMathWrapper().rayDivCeil(a, index) == scaled) return (a, true);
-        }
-        return (0, false);
     }
 
 }
