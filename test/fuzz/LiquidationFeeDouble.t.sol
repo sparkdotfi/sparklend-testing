@@ -24,7 +24,7 @@ contract LiquidationFeeDoubleRoundTests is SparkLendTestBase {
     // Simple example of the two-leg ceil overshoot.
     function test_twoLegCeil_overshoots_concrete() public {
         uint256 scaledBalanceOfUser          = 147;
-        uint256 index                        = 2530773485048679075952786560; // ~2.5307 * RAY
+        uint256 index                        = 2.530773485048679075952786560e27; // ~2.5307 * RAY
         uint256 actualCollateralToLiquidate  = 367;
         uint256 liquidationProtocolFeeAmount = 4;
 
