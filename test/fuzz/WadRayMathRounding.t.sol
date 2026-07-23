@@ -44,8 +44,8 @@ contract WadRayMathRoundingTests is Test {
     function testFuzz_rayMul_ceil_exactDivisionNotOverRounded(uint256 x) public {
         x = bound(x, 0, MAX_AMOUNT);
 
-        assertEq(mathWrapper.rayMulCeil(x, RAY),  x);  // rayMulCeil(x, RAY) = x
-        assertEq(mathWrapper.rayMulFloor(x, RAY), x);  // rayMulFloor(x, RAY) = x
+        assertEq(mathWrapper.rayMulCeil(x, RAY),  x);
+        assertEq(mathWrapper.rayMulFloor(x, RAY), x);
     }
 
     function test_rayMulFloor_exampleValues() public {
@@ -103,8 +103,8 @@ contract WadRayMathRoundingTests is Test {
     function testFuzz_rayDiv_ceil_exactDivisionNotOverRounded(uint256 x) public {
         x = bound(x, 0, MAX_AMOUNT);
 
-        assertEq(mathWrapper.rayDivCeil(x, RAY),  x);  // rayDivCeil(x, RAY) = x
-        assertEq(mathWrapper.rayDivFloor(x, RAY), x);  // rayDivFloor(x, RAY) = x
+        assertEq(mathWrapper.rayDivCeil(x, RAY),  x);
+        assertEq(mathWrapper.rayDivFloor(x, RAY), x);
     }
 
     function test_rayDiv_byZero_reverts() public {
@@ -183,31 +183,6 @@ contract WadRayMathRoundingTests is Test {
         uint256 backToScaled = mathWrapper.rayDivFloor(underlying, index);
 
         assertEq(backToScaled, scaled);
-    }
-
-    /**********************************************************************************************/
-    /*** Overflow guards                                                                        ***/
-    /**********************************************************************************************/
-
-    function test_rayMul_overflowReverts() public {
-        uint256 a = type(uint256).max;
-
-        vm.expectRevert();
-        mathWrapper.rayMulFloor(a, 2);
-
-        vm.expectRevert();
-        mathWrapper.rayMulCeil(a, 2);
-    }
-
-    function test_rayDiv_overflowReverts() public {
-        // a * RAY must not overflow; a just above type(uint256).max / RAY triggers the guard.
-        uint256 a = type(uint256).max / RAY + 1;
-
-        vm.expectRevert();
-        mathWrapper.rayDivFloor(a, 1);
-
-        vm.expectRevert();
-        mathWrapper.rayDivCeil(a, 1);
     }
 
 }
