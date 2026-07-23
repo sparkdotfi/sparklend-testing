@@ -4,11 +4,11 @@ conditional recovery from a synthetic stale collateral configuration
 │       └── it should revert at the zero-underlying-balance guard and preserve state
 ├── pool.supply()
 │   └── given a synthetic enabled collateral flag with zero scaled balance
-│       ├── when supply is below the first half-up mintable amount
+│       ├── when supply is below the first floor-mintable amount
 │       │   └── it should revert with invalid mint amount and preserve state
-│       └── when supply is at the first half-up mintable amount
+│       └── when supply is at the first floor-mintable amount
 │           └── it should recover a positive scaled balance [01]
 └── pool.setUserUseReserveAsCollateral()
     └── given a synthetic enabled collateral flag with zero scaled balance
-        └── given a first-half-up-mintable resupply
+        └── given a first-floor-mintable resupply
             └── it should disable collateral [02]

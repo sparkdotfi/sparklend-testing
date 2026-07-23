@@ -330,7 +330,7 @@ contract FlashLoanSimpleSuccessTests is FlashLoanSimpleTestBase {
 
         poolParams.accruedToTreasury = 0;
 
-        aTokenParams.totalSupply = 1010 ether;  // 0.5 ether minted to the treasury
+        aTokenParams.totalSupply = 1010 ether - 1;  // 0.5 ether - 1 minted to the treasury
 
         _assertPoolReserveState(poolParams);
         _assertATokenState(aTokenParams);
@@ -338,15 +338,15 @@ contract FlashLoanSimpleSuccessTests is FlashLoanSimpleTestBase {
 
         _repay(borrower, address(borrowAsset), 100 ether);
         _withdraw(supplier, address(borrowAsset), 1009.5 ether);
-        _withdraw(treasury, address(borrowAsset), 0.5 ether);
+        _withdraw(treasury, address(borrowAsset), 0.5 ether - 1);
 
         assertEq(aBorrowAsset.balanceOf(treasury), 0);
         assertEq(aBorrowAsset.balanceOf(supplier), 0);
         assertEq(aBorrowAsset.totalSupply(),       0);
 
-        assertEq(borrowAsset.balanceOf(treasury),              0.5 ether);
+        assertEq(borrowAsset.balanceOf(treasury),              0.5 ether - 1);  // Rounding error
         assertEq(borrowAsset.balanceOf(supplier),              1009.5 ether);
-        assertEq(borrowAsset.balanceOf(address(aBorrowAsset)), 0);
+        assertEq(borrowAsset.balanceOf(address(aBorrowAsset)), 1);
     }
 
     function test_flashLoanSimple_06()

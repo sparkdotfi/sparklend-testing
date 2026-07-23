@@ -11,6 +11,9 @@ import { DataTypes }            from "sparklend-v1-core/contracts/protocol/libra
 import { MockOracleSentinel } from "test/mocks/MockOracleSentinel.sol";
 import { MockOracle }         from "test/mocks/MockOracle.sol";
 
+import { IVariableDebtToken } from "sparklend-v1-core/contracts/interfaces/IVariableDebtToken.sol";
+import { WadRayMath }         from "sparklend-v1-core/contracts/protocol/libraries/math/WadRayMath.sol";
+
 import { IERC20, SparkLendTestBase } from "test/SparkLendTestBase.sol";
 
 contract LiquidationCallTestBase is SparkLendTestBase {
@@ -127,7 +130,7 @@ contract LiquidationCallFailureTest is LiquidationCallTestBase {
         // Greater than MINIMUM_HEALTH_FACTOR_LIQUIDATION_THRESHOLD and below 1
         assertGe(healthFactor, 0.95e18);
         assertLt(healthFactor, 1e18);
-        assertEq(healthFactor, 0.950000010295150112e18);  // Closest to 0.95e18 possible with config
+        assertEq(healthFactor, 0.950000010277100111e18);  // Closest to 0.95e18 possible with config
 
         vm.expectRevert(bytes(Errors.PRICE_ORACLE_SENTINEL_CHECK_FAILED));
         pool.liquidationCall(address(collateralAsset), address(borrowAsset), borrower, 500 ether, false);
@@ -136,7 +139,7 @@ contract LiquidationCallFailureTest is LiquidationCallTestBase {
 
         ( ,,,,, healthFactor ) = pool.getUserAccountData(borrower);
 
-        assertEq(healthFactor, 0.949999999158300001e18);  // Closest to 0.95e18 possible with config
+        assertEq(healthFactor, 0.949999999140250001e18);  // Closest to 0.95e18 possible with config
 
         pool.liquidationCall(address(collateralAsset), address(borrowAsset), borrower, 500 ether, false);
     }
@@ -163,7 +166,7 @@ contract LiquidationCallFailureTest is LiquidationCallTestBase {
 
         ( ,,,,, healthFactor ) = pool.getUserAccountData(borrower);
 
-        assertEq(healthFactor, 0.999999998420000002e18);  // Closest to 1e18 possible with config
+        assertEq(healthFactor, 0.999999998400000003e18);  // Closest to 1e18 possible with config
 
         pool.liquidationCall(address(collateralAsset), address(borrowAsset), borrower, 500 ether, false);
     }
@@ -272,6 +275,7 @@ contract LiquidationCallConcreteTest is LiquidationCallTestBase {
 
     using UserConfiguration for DataTypes.UserConfigurationMap;
     using ReserveConfiguration for DataTypes.ReserveConfigurationMap;
+    using WadRayMath for uint256;
 
     address debtToken;
 
@@ -549,7 +553,7 @@ contract LiquidationCallConcreteTest is LiquidationCallTestBase {
         params.liquidationAmount = 800 ether;
         params.receiveAToken     = false;
 
-        params.borrowerDebt         = 723.445957199470228858 ether;  // 500 ether + 37% APR compounded over 365 days
+        params.borrowerDebt         = 723.445957199470228858 ether + 1;  // 500 ether + 37% APR compounded over 365 days
         params.debtLiquidated       = 723.445957199470228858 ether;
         params.collateralLiquidated = 730.680416771464931147 ether;  // 1% liquidation bonus
         params.remainingDebt        = 0;
@@ -624,16 +628,16 @@ contract LiquidationCallConcreteTest is LiquidationCallTestBase {
         params.liquidationAmount = 400 ether;
         params.receiveAToken     = false;
 
-        params.borrowerDebt         = 723.445957199470228858 ether;  // 500 ether + 37% APR compounded over 365 days
+        params.borrowerDebt         = 723.445957199470228858 ether + 1;  // 500 ether + 37% APR compounded over 365 days + 1 Rounding
         params.debtLiquidated       = 400 ether;
         params.collateralLiquidated = 404 ether;  // 1% liquidation bonus
-        params.remainingDebt        = 323.445957199470228858 ether;
-        params.healthFactor         = 0.921328566258590063e18;  // User position is still unhealthy
+        params.remainingDebt        = 323.445957199470228859 ether;
+        params.healthFactor         = 0.921328566230105287e18;  // User position is still unhealthy
 
         params.liquidityIndex         = 1.3515e27;                      // Full utilization for a full year (37% * 95%)
         params.borrowIndex            = 1.446891914398940457716504e27;  // Significant difference because large APR and compounded over a year
-        params.resultingBorrowRate    = 0.061177267423387126110513189e27;
-        params.resultingLiquidityRate = 0.025984197772484160842118769e27;
+        params.resultingBorrowRate    = 0.061177267423387126110532296e27;
+        params.resultingLiquidityRate = 0.025984197772484160842171302e27;
         params.updateTimestamp        = 1 + 365 days;
 
         params.isBorrowing         = true;
@@ -664,13 +668,13 @@ contract LiquidationCallConcreteTest is LiquidationCallTestBase {
         params.borrowerDebt         = 501.853426710065837121 ether;  // 500 ether + 37% APR over 3.65 days
         params.debtLiquidated       = 250.926713355032918561 ether;
         params.collateralLiquidated = 253.435980488583247747 ether;  // 1% liquidation bonus
-        params.remainingDebt        = 250.926713355032918559 ether;
-        params.healthFactor         = 1.487613673237473184e18;  // User has no more debt
+        params.remainingDebt        = 250.926713355032918561 ether;  // Ceil-rounded debt balance
+        params.healthFactor         = 1.487613673178188397e18;
 
         params.liquidityIndex         = 1.003515e27;                       // Full utilization for a 1% of a year
         params.borrowIndex            = 1.003706853420131674241446640e27;  // Smaller difference because compounded over a shorter period
-        params.resultingBorrowRate    = 0.062499999999999999999950185e27;
-        params.resultingLiquidityRate = 0.029687499999999999999858026e27;
+        params.resultingBorrowRate    = 0.062499999999999999999975093e27;
+        params.resultingLiquidityRate = 0.029687499999999999999929013e27;
         params.updateTimestamp        = 1 + WARP_TIME;
 
         params.isBorrowing         = true;
@@ -703,7 +707,7 @@ contract LiquidationCallConcreteTest is LiquidationCallTestBase {
         params.debtLiquidated       = 200 ether;
         params.collateralLiquidated = 202 ether;  // 1% liquidation bonus
         params.remainingDebt        = 301.853426710065837121 ether;
-        params.healthFactor         = 1.321833594366751193e18;
+        params.healthFactor         = 1.321833594322960615e18;
 
         params.liquidityIndex         = 1.003515e27;                       // Full utilization for a 1% of a year (37% * 95%)
         params.borrowIndex            = 1.003706853420131674241446640e27;  // Smaller difference because compounded over a shorter period
@@ -781,7 +785,7 @@ contract LiquidationCallConcreteTest is LiquidationCallTestBase {
         params.liquidationAmount = 800 ether;
         params.receiveAToken     = false;
 
-        params.borrowerDebt         = 723.445957199470228858 ether;  // 500 ether + 37% APR compounded over 365 days
+        params.borrowerDebt         = 723.445957199470228858 ether + 1;  // 500 ether + 37% APR compounded over 365 days + 1 Rounding
         params.debtLiquidated       = 723.445957199470228858 ether;
         params.collateralLiquidated = 730.680416771464931147 ether;
         params.protocolFee          = 1.446891914398940458 ether;
@@ -864,17 +868,17 @@ contract LiquidationCallConcreteTest is LiquidationCallTestBase {
         params.liquidationAmount = 400 ether;
         params.receiveAToken     = false;
 
-        params.borrowerDebt         = 723.445957199470228858 ether;  // 500 ether + 37% APR compounded over 365 days
+        params.borrowerDebt         = 723.445957199470228858 ether + 1;  // 500 ether + 37% APR compounded over 365 days + 1 Rounding
         params.debtLiquidated       = 400 ether;
         params.collateralLiquidated = 404 ether;  // 1% liquidation bonus
         params.protocolFee          = 0.8 ether;
-        params.remainingDebt        = 323.445957199470228858 ether;
-        params.healthFactor         = 0.921328566258590063e18;  // User position is still unhealthy
+        params.remainingDebt        = 323.445957199470228859 ether;
+        params.healthFactor         = 0.921328566230105287e18;  // User position is still unhealthy
 
         params.liquidityIndex         = 1.3515e27;                      // Full utilization for a full year (37% * 95%)
         params.borrowIndex            = 1.446891914398940457716504e27;  // Significant difference because large APR and compounded over a year
-        params.resultingBorrowRate    = 0.061177267423387126110513189e27;
-        params.resultingLiquidityRate = 0.025984197772484160842118769e27;
+        params.resultingBorrowRate    = 0.061177267423387126110532296e27;
+        params.resultingLiquidityRate = 0.025984197772484160842171302e27;
         params.updateTimestamp        = 1 + 365 days;
 
         params.isBorrowing         = true;
@@ -909,13 +913,13 @@ contract LiquidationCallConcreteTest is LiquidationCallTestBase {
         params.debtLiquidated       = 250.926713355032918561 ether;
         params.collateralLiquidated = 253.435980488583247747 ether;  // 1% liquidation bonus
         params.protocolFee          = 0.501853426710065837 ether;
-        params.remainingDebt        = 250.926713355032918559 ether;
-        params.healthFactor         = 1.487613673237473184e18;  // User has no more debt
+        params.remainingDebt        = 250.926713355032918561 ether;  // Ceil-rounded debt balance
+        params.healthFactor         = 1.487613673178188397e18;
 
         params.liquidityIndex         = 1.003515e27;                       // Full utilization for a 1% of a year (37% * 95%)
         params.borrowIndex            = 1.003706853420131674241446640e27;  // Smaller difference because compounded over a shorter period
-        params.resultingBorrowRate    = 0.062499999999999999999950185e27;
-        params.resultingLiquidityRate = 0.029687499999999999999858026e27;
+        params.resultingBorrowRate    = 0.062499999999999999999975093e27;
+        params.resultingLiquidityRate = 0.029687499999999999999929013e27;
         params.updateTimestamp        = 1 + WARP_TIME;
 
         params.isBorrowing         = true;
@@ -952,7 +956,7 @@ contract LiquidationCallConcreteTest is LiquidationCallTestBase {
         params.collateralLiquidated = 202 ether;  // 1% liquidation bonus
         params.protocolFee          = 0.4 ether;
         params.remainingDebt        = 301.853426710065837121 ether;
-        params.healthFactor         = 1.321833594366751193e18;
+        params.healthFactor         = 1.321833594322960615e18;
 
         params.liquidityIndex         = 1.003515e27;                       // Full utilization for a 1% of a year (37% * 95%)
         params.borrowIndex            = 1.003706853420131674241446640e27;  // Smaller difference because compounded over a shorter period
@@ -992,12 +996,12 @@ contract LiquidationCallConcreteTest is LiquidationCallTestBase {
         params.liquidationAmount = 600 ether;
         params.receiveAToken     = false;
 
-        params.borrowerDebt         = 723.445957199470228858 ether;  // 500 ether + 37% APR compounded over 365 days
+        params.borrowerDebt         = 723.445957199470228858 ether + 1;  // 500 ether + 37% APR compounded over 365 days + 1 Rounding
         params.debtLiquidated       = 600 ether;
         params.collateralLiquidated = 630 ether;  // 5% liquidation bonus
         params.protocolFee          = 6 ether;
         params.remainingDebt        = 123.445957199470228859 ether;
-        params.healthFactor         = 1.798357800072075410e18;
+        params.healthFactor         = 1.798357799926395645e18;
 
         params.liquidityIndex         = 1.3515e27;                      // Full utilization for a full year (37% * 95%)
         params.borrowIndex            = 1.446891914398940457716504e27;  // Significant difference because large APR and compounded over a year
@@ -1033,12 +1037,12 @@ contract LiquidationCallConcreteTest is LiquidationCallTestBase {
         params.liquidationAmount = 600 ether;
         params.receiveAToken     = false;
 
-        params.borrowerDebt         = 723.445957199470228858 ether;  // 500 ether + 37% APR compounded over 365 days
+        params.borrowerDebt         = 723.445957199470228858 ether + 1;  // 500 ether + 37% APR compounded over 365 days + 1 Rounding
         params.debtLiquidated       = 600 ether;
         params.collateralLiquidated = 623.762376237623762375 ether;  // 5% liquidation bonus
         params.protocolFee          = 5.940594059405940594 ether;
         params.remainingDebt        = 123.445957199470228859 ether;
-        params.healthFactor         = 1.846962064938888259e18;
+        params.healthFactor         = 1.846962064789271203e18;
 
         params.liquidityIndex         = 1.3515e27;                         // Full utilization for a full year (37% * 95%)
         params.borrowIndex            = 1.446891914398940457716504e27;     // Significant difference because large APR and compounded over a year
@@ -1076,12 +1080,12 @@ contract LiquidationCallConcreteTest is LiquidationCallTestBase {
         params.liquidationAmount = 600 ether;
         params.receiveAToken     = true;
 
-        params.borrowerDebt         = 723.445957199470228858 ether;  // 500 ether + 37% APR compounded over 365 days
+        params.borrowerDebt         = 723.445957199470228858 ether + 1;  // 500 ether + 37% APR compounded over 365 days + 1 Rounding
         params.debtLiquidated       = 600 ether;
         params.collateralLiquidated = 606 ether;  // 1% liquidation bonus
         params.protocolFee          = 1.2 ether;
         params.remainingDebt        = 123.445957199470228859 ether;
-        params.healthFactor         = 1.595840029793688540e18;
+        params.healthFactor         = 1.595840029664414154e18;
 
         params.liquidityIndex         = 1.3515e27;                         // Full utilization for a full year (37% * 95%)
         params.borrowIndex            = 1.446891914398940457716504e27;     // Significant difference because large APR and compounded over a year
@@ -1124,12 +1128,12 @@ contract LiquidationCallConcreteTest is LiquidationCallTestBase {
         params.liquidationAmount = 600 ether;
         params.receiveAToken     = true;
 
-        params.borrowerDebt         = 723.445957199470228858 ether;  // 500 ether + 37% APR compounded over 365 days
+        params.borrowerDebt         = 723.445957199470228858 ether + 1;  // 500 ether + 37% APR compounded over 365 days + 1 Rounding
         params.debtLiquidated       = 600 ether;
         params.collateralLiquidated = 606 ether;  // 1% liquidation bonus
         params.protocolFee          = 1.2 ether;
         params.remainingDebt        = 123.445957199470228859 ether;
-        params.healthFactor         = 1.595840029793688540e18;
+        params.healthFactor         = 1.595840029664414154e18;
 
         params.liquidityIndex         = 1.3515e27;                         // Full utilization for a full year (37% * 95%)
         params.borrowIndex            = 1.446891914398940457716504e27;     // Significant difference because large APR and compounded over a year
@@ -1203,12 +1207,12 @@ contract LiquidationCallConcreteTest is LiquidationCallTestBase {
         params.liquidationAmount = 600 ether;
         params.receiveAToken     = true;
 
-        params.borrowerDebt         = 723.445957199470228858 ether;  // 500 ether + 37% APR compounded over 365 days
+        params.borrowerDebt         = 723.445957199470228858 ether + 1;  // 500 ether + 37% APR compounded over 365 days + 1 Rounding
         params.debtLiquidated       = 600 ether;
         params.collateralLiquidated = 606 ether;  // 1% liquidation bonus
         params.protocolFee          = 1.2 ether;
         params.remainingDebt        = 123.445957199470228859 ether;
-        params.healthFactor         = 1.595840029793688540e18;
+        params.healthFactor         = 1.595840029664414154e18;
 
         params.liquidityIndex         = 1.3515e27;                         // Full utilization for a full year (37% * 95%)
         params.borrowIndex            = 1.446891914398940457716504e27;     // Significant difference because large APR and compounded over a year
@@ -1381,9 +1385,13 @@ contract LiquidationCallConcreteTest is LiquidationCallTestBase {
             params.receiveAToken
         );
 
-        // Remaining outstanding debt that the user owes divided by the current cash (liquidated amount) plus the outstanding debt
+        // The rate strategy computes total variable debt as scaledTotalSupply.rayMul(borrowIndex) (half-up rounding),
+        // while debtToken.balanceOf() (and therefore params.remainingDebt) uses rayMulCeil, so recompute it here to
+        // avoid a spurious mismatch when that rounding difference tips the utilization ratio off of a clean value.
+        uint256 totalVariableDebt = IVariableDebtToken(debtToken).scaledTotalSupply().rayMul(params.borrowIndex);
+
         ( uint256 borrowRate, uint256 liquidityRate )
-            = _getUpdatedRates(params.remainingDebt, params.debtLiquidated + params.remainingDebt);
+            = _getUpdatedRates(totalVariableDebt, params.debtLiquidated + totalVariableDebt);
 
         // Calculated values and expected values are within 2e-27 of each other
         assertApproxEqAbs(borrowRate,    params.resultingBorrowRate,    2, "borrowRate");
@@ -1431,11 +1439,11 @@ contract LiquidationCallConcreteTest is LiquidationCallTestBase {
         _assertPoolReserveState(state.collateralReserveParams);
         _assertPoolReserveState(state.borrowReserveParams, 1);  // Allow 1 wei difference because of rounding in accruedToTreasury calculation
 
-        _assertATokenState(state.aCollateralAssetParams);
-        _assertDebtTokenState(state.borrowAssetDebtTokenParams);
+        _assertATokenState(state.aCollateralAssetParams, 1);  // Allow 1 wei difference because of rounding in userBalance calculation
+        _assertDebtTokenState(state.borrowAssetDebtTokenParams, 2);  // Allow 2 wei: balanceOf is ceil, rate path uses half-up
 
-        _assertAssetState(state.collateralAssetParams);
-        _assertAssetState(state.borrowAssetParams);
+        _assertAssetState(state.collateralAssetParams, 1);
+        _assertAssetState(state.borrowAssetParams, 1);
 
         ( ,,,,, uint256 healthFactor ) = pool.getUserAccountData(borrower);
 

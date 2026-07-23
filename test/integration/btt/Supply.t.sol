@@ -669,8 +669,8 @@ contract SupplyConcreteTests is SupplyTestBase {
         poolParams.lastUpdateTimestamp       = WARP_TIME + 1;
         poolParams.accruedToTreasury         = borrowerDebt * 5/100 * 1e27 / expectedLiquidityIndex;
 
-        aTokenParams.userBalance = 750 ether;
-        aTokenParams.totalSupply = 1250 ether + supplierYield;
+        aTokenParams.userBalance = 750 ether - 1;  // Rounding
+        aTokenParams.totalSupply = 1250 ether + supplierYield - 1;  // Rounding
 
         assetParams.allowance     = 0;
         assetParams.userBalance   = 250 ether;  // Remaining from 1000
@@ -928,8 +928,8 @@ contract SupplyConcreteTests is SupplyTestBase {
         poolParams.lastUpdateTimestamp       = WARP_TIME * 2 + 1;
         poolParams.accruedToTreasury         = borrowerDebt * 5/100 * 1e27 / expectedLiquidityIndex;
 
-        aTokenParams.userBalance = 750 ether;
-        aTokenParams.totalSupply = 1250 ether + supplierYield;
+        aTokenParams.userBalance = 750 ether - 1;  // Rounding
+        aTokenParams.totalSupply = 1250 ether + supplierYield - 1;  // Rounding
 
         assetParams.allowance     = 0;
         assetParams.userBalance   = 250 ether;  // Remaining from 1000

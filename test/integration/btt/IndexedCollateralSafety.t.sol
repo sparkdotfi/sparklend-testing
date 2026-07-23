@@ -28,11 +28,11 @@ contract IndexedCollateralSafetyTests is SparkLendTestBase {
     uint128 constant RAY = 1e27;
     uint128 constant BASE_RATE_RAY = 0.05e27;
 
-    // At this index, 1 unit scales to zero while 2 scales to one and that scaled unit is visible as 3.
+    // At this index, 2 units floor-scale to zero while 3 floor-scale to one and that scaled unit is visible as 2.
     uint128 constant TARGET_LIQUIDITY_INDEX = 2530773485048679075952786560;
-    uint256 constant FIRST_UNMINTABLE_AMOUNT = 1;
-    uint256 constant FIRST_MINTABLE_AMOUNT = 2;
-    uint256 constant FIRST_MINTABLE_VISIBLE_BALANCE = 3;
+    uint256 constant FIRST_UNMINTABLE_AMOUNT = 2;
+    uint256 constant FIRST_MINTABLE_AMOUNT = 3;
+    uint256 constant FIRST_MINTABLE_VISIBLE_BALANCE = 2;
 
     // 50% LTV, 60% threshold, 100.01% bonus, 18 decimals, active, and 5% reserve factor.
     uint256 constant COLLATERAL_CONFIG = uint256(50_00) | (uint256(60_00) << 16) | (uint256(100_01) << 32)
@@ -119,26 +119,26 @@ contract IndexedCollateralSafetyTests is SparkLendTestBase {
         testPool.setUsingAsCollateralForTest(owner, 0, true);
 
         assertEq(pool.getReserveNormalizedIncome(address(collateralAsset)), TARGET_LIQUIDITY_INDEX);
-        assertEq(_rayDivHalfUp(FIRST_UNMINTABLE_AMOUNT, TARGET_LIQUIDITY_INDEX), 0);
-        assertEq(_rayDivHalfUp(FIRST_MINTABLE_AMOUNT, TARGET_LIQUIDITY_INDEX), 1);
-        assertEq(_rayMulHalfUp(1, TARGET_LIQUIDITY_INDEX), FIRST_MINTABLE_VISIBLE_BALANCE);
+        assertEq(_rayDivFloor(FIRST_UNMINTABLE_AMOUNT, TARGET_LIQUIDITY_INDEX), 0);
+        assertEq(_rayDivFloor(FIRST_MINTABLE_AMOUNT, TARGET_LIQUIDITY_INDEX), 1);
+        assertEq(_rayMulFloor(1, TARGET_LIQUIDITY_INDEX), FIRST_MINTABLE_VISIBLE_BALANCE);
         _assertIndexedState(_expectedSyntheticStaleState(0, 0));
         _;
     }
 
-    modifier whenSupplyIsBelowFirstHalfUpMintableAmount() {
+    modifier whenSupplyIsBelowFirstFloorMintableAmount() {
         supplyAmount = FIRST_UNMINTABLE_AMOUNT;
         _mintAndApproveSupply(supplyAmount);
         _;
     }
 
-    modifier whenSupplyIsAtFirstHalfUpMintableAmount() {
+    modifier whenSupplyIsAtFirstFloorMintableAmount() {
         supplyAmount = FIRST_MINTABLE_AMOUNT;
         _mintAndApproveSupply(supplyAmount);
         _;
     }
 
-    modifier givenFirstHalfUpMintableResupply() {
+    modifier givenFirstFloorMintableResupply() {
         _mintAndApproveSupply(FIRST_MINTABLE_AMOUNT);
         vm.prank(owner);
         pool.supply(address(collateralAsset), FIRST_MINTABLE_AMOUNT, owner, 0);
@@ -161,7 +161,7 @@ contract IndexedCollateralSafetyTests is SparkLendTestBase {
     function test_belowFirstMintableSupplyRevertsAndPreservesState()
         public
         givenSyntheticEnabledCollateralFlagWithZeroScaledBalance
-        whenSupplyIsBelowFirstHalfUpMintableAmount
+        whenSupplyIsBelowFirstFloorMintableAmount
     {
         IndexedState memory expected = _expectedSyntheticStaleState(supplyAmount, supplyAmount);
         _assertIndexedState(expected);
@@ -176,7 +176,7 @@ contract IndexedCollateralSafetyTests is SparkLendTestBase {
     function test_indexedCollateralSafety_01()
         public
         givenSyntheticEnabledCollateralFlagWithZeroScaledBalance
-        whenSupplyIsAtFirstHalfUpMintableAmount
+        whenSupplyIsAtFirstFloorMintableAmount
     {
         _assertIndexedState(_expectedSyntheticStaleState(supplyAmount, supplyAmount));
 
@@ -189,7 +189,7 @@ contract IndexedCollateralSafetyTests is SparkLendTestBase {
     function test_indexedCollateralSafety_02()
         public
         givenSyntheticEnabledCollateralFlagWithZeroScaledBalance
-        givenFirstHalfUpMintableResupply
+        givenFirstFloorMintableResupply
     {
         IndexedState memory expected = _expectedRecoveredState();
         _assertIndexedState(expected);
@@ -367,11 +367,11 @@ contract IndexedCollateralSafetyTests is SparkLendTestBase {
         data.healthFactor = type(uint256).max;
     }
 
-    function _rayMulHalfUp(uint256 a, uint256 b) internal pure returns (uint256) {
-        return (a * b + 0.5e27) / RAY;
+    function _rayMulFloor(uint256 a, uint256 b) internal pure returns (uint256) {
+        return (a * b) / RAY;
     }
 
-    function _rayDivHalfUp(uint256 a, uint256 b) internal pure returns (uint256) {
-        return (a * RAY + (b / 2)) / b;
+    function _rayDivFloor(uint256 a, uint256 b) internal pure returns (uint256) {
+        return (a * RAY) / b;
     }
 }

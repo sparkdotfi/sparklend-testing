@@ -366,8 +366,8 @@ contract WithdrawConcreteTests is WithdrawTestBase {
         poolParams.lastUpdateTimestamp       = WARP_TIME + 1;
         poolParams.accruedToTreasury         = borrowerDebt * 5/100 * 1e27 / expectedLiquidityIndex + 1;  // Rounding
 
-        aTokenParams.userBalance = 200 ether + supplierYield;
-        aTokenParams.totalSupply = 200 ether + supplierYield;
+        aTokenParams.userBalance = 200 ether + supplierYield - 1;
+        aTokenParams.totalSupply = 200 ether + supplierYield - 1;
 
         assetParams.userBalance   = 800 ether;
         assetParams.aTokenBalance = 100 ether;
@@ -569,8 +569,8 @@ contract WithdrawConcreteTests is WithdrawTestBase {
         poolParams.lastUpdateTimestamp       = WARP_TIME * 2 + 1;
         poolParams.accruedToTreasury         = borrowerDebt * 5/100 * 1e27 / expectedLiquidityIndex + 1;  // Rounding
 
-        aTokenParams.userBalance = 200 ether + supplierYield;
-        aTokenParams.totalSupply = 200 ether + supplierYield;
+        aTokenParams.userBalance = 200 ether + supplierYield - 1;
+        aTokenParams.totalSupply = 200 ether + supplierYield - 1;
 
         assetParams.userBalance   = 800 ether;
         assetParams.aTokenBalance = 100 ether;
