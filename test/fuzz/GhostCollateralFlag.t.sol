@@ -5,6 +5,8 @@ import "forge-std/Test.sol";
 
 import { IERC20 } from "erc20-helpers/interfaces/IERC20.sol";
 
+import { WadRayMathWrapper } from "sparklend-v1-core/contracts/mocks/tests/WadRayMathWrapper.sol";
+
 import { SparkLendTestBase } from "test/SparkLendTestBase.sol";
 
 // Documents the "ghost collateral flag" issue from the SC-1569 rounding change.
@@ -52,7 +54,11 @@ contract GhostCollateralFlagTests is SparkLendTestBase {
 
         _supplyAndUseAsCollateral(victim, address(collateralAsset), 1_000_000 ether);
 
-        // Step 4 : Find a ghost amount that can be transferred to the recipient without clearing the flag.
+        // Step 4 : Grow the index above RAY by having a borrower borrow it.
+
+        _growCollateralIndex();
+
+        // Step 5 : Find a ghost amount that can be transferred to the recipient without clearing the flag.
         ghostAmount = _getGhostAmount();
     }
 
@@ -128,10 +134,6 @@ contract GhostCollateralFlagTests is SparkLendTestBase {
     }
 
     function _getGhostAmount() internal returns (uint256 _ghostAmount) {
-        // Grow the index above 1.0 by having a borrower borrow it.
-
-        _growCollateralIndex();
-
         // Get latest index, scaled balance and balance of the victim.
 
         uint256 index     = pool.getReserveNormalizedIncome(address(collateralAsset));
@@ -162,17 +164,13 @@ contract GhostCollateralFlagTests is SparkLendTestBase {
     }
 
     function _findGhostAmount(uint256 index, uint256 scaled, uint256 balanceOf)
-        internal pure returns (uint256, bool)
+        internal returns (uint256, bool)
     {
         for (uint256 k = 1; k <= 256 && k < balanceOf; ++k) {
             uint256 a = balanceOf - k;
-            if (_rayDivCeil(a, index) == scaled) return (a, true);
+            if (new WadRayMathWrapper().rayDivCeil(a, index) == scaled) return (a, true);
         }
         return (0, false);
-    }
-
-    function _rayDivCeil(uint256 a, uint256 index) internal pure returns (uint256) {
-        return (a * RAY + index - 1) / index;
     }
 
 }
