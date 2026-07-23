@@ -1,0 +1,110 @@
+name: Claude — SparkLend Test Authoring
+
+# Interactive Claude Code sessions for authoring, running, and reviewing SparkLend Foundry
+# tests. Triggered by an "@claude" mention in an issue or PR comment.
+#
+# NOTE: issue_comment / pull_request_review_comment events always run the workflow file from
+# the DEFAULT branch (master). This file must be merged to master before mentions will fire.
+#
+# Capabilities granted to the session:
+#   1. Write new tests            (Edit/Write + the sparklend-testing skill under .claude/)
+#   2. Run the full test suite    (Foundry pre-installed; `forge test` incl. mainnet-fork tests)
+#   3. Open PRs and comment back   (contents/pull-requests/issues: write, via gh + the action)
+#
+# Auditing: the full turn-by-turn session (including thinking) is streamed to the job log
+# (show_full_output) AND uploaded as a downloadable transcript artifact per run.
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+
+# Cancel a superseded run if a new @claude comment lands on the same issue/PR.
+concurrency:
+  group: claude-test-authoring-${{ github.event.issue.number || github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  claude:
+    # Only run when the comment actually mentions @claude.
+    if: |
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write         # commit test branches and push
+      pull-requests: write    # open PRs, comment
+      issues: write           # comment on issues
+      id-token: write         # OIDC for the action
+      actions: read
+    env:
+      # Fork/integration tests resolve getChain("mainnet").rpcUrl from this (see ForkTestBase).
+      # Inherited by every Bash `forge test` the session runs.
+      MAINNET_RPC_URL: ${{ secrets.MAINNET_RPC_URL }}
+      # Etherscan key is harmless if unused; some fork setups resolve it. Safe to keep.
+      ETHERSCAN_API_KEY: ${{ secrets.ETHERSCAN_API_KEY }}
+    steps:
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v4
+        with:
+          # SparkLend imports 5 submodules (sparklend-v1-core, sparklend-advanced, etc.);
+          # the pinned core under lib/ is what tests build against.
+          submodules: recursive
+          fetch-depth: 1
+          persist-credentials: true
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      # Warm the build once so the session doesn't pay first-compile cost inside its budget,
+      # and so a broken tree fails fast before Claude starts.
+      - name: Build contracts
+        run: forge build
+
+      - name: Run Claude Code
+        id: claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Stream the complete session (incl. thinking) into the job log for live auditing.
+          show_full_output: true
+          # Post/maintain a progress + summary comment on the triggering issue/PR.
+          track_progress: true
+          prompt: |
+            You are operating in the SparkLend testing repository via a CI Claude Code session.
+
+            ALWAYS use the "sparklend-testing" skill (in .claude/skills/sparklend-testing/) and
+            follow it exactly for any work that writes, revises, or reviews tests. Treat the
+            repository as an assurance harness: never modify protocol code, submodule gitlinks,
+            dependency metadata, or global test config to make a test pass — surface the blocker
+            instead.
+
+            The task is in the comment that triggered this run. Depending on that task:
+
+            - WRITING/REVISING TESTS: author per the skill (start from the matching .tree,
+              map nodes to modifiers, assert full before/after state, derive expectations in
+              literal rounding order). Then VALIDATE by running the FULL suite with
+              `forge test` — this includes the mainnet-fork integration tests; MAINNET_RPC_URL
+              is already set in the environment. Run targeted tests first, then the full suite.
+              Report exactly what ran and what passed/failed.
+
+            - REVIEWING: apply the skill's review rubric and anti-patterns references.
+
+            When you have made changes worth landing, commit them to a new branch and open a PR
+            against the base branch, then comment a concise summary on the triggering issue/PR:
+            what you changed, the exact `forge test` command(s) you ran, and the pass/fail
+            counts. If the full suite does not pass, do NOT open a PR as done — report the
+            failures instead. Never weaken or skip a failing safety property to get green.
+          # Fable 5. Allow the toolset needed to author tests, run Foundry/git/gh via Bash,
+          # and fan out research with Task.
+          claude_args: '--model claude-fable-5 --allowedTools "Bash,Edit,Write,Read,Glob,Grep,Task"'
+
+      - name: Upload session transcript
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: claude-session-${{ github.run_id }}
+          path: ${{ steps.claude.outputs.execution_file }}
+          if-no-files-found: warn
+          retention-days: 30
