@@ -688,8 +688,8 @@ contract RepayConcreteTests is RepayTestBase {
         poolParams.lastUpdateTimestamp       = WARP_TIME + 1;
         poolParams.accruedToTreasury         = borrowerDebt * 5/100 * 1e27 / expectedLiquidityIndex;  // Scaled value
 
-        debtTokenParams.userBalance = 1;
-        debtTokenParams.totalSupply = 1;
+        debtTokenParams.userBalance = 2;
+        debtTokenParams.totalSupply = 2;
 
         assetParams.allowance     = 0;
         assetParams.userBalance   = 0;
