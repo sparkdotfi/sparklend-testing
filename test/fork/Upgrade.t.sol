@@ -178,14 +178,8 @@ contract UpgradeTest is ForkTestBase {
         return BaseImmutableAdminUpgradeabilityProxy(payable(address(pool))).implementation();
     }
 
-    // Fund an account with an asset by transferring the asset to the account instead of using deal.
-    function _fund(address asset, address user, uint256 amount) internal {
-        vm.prank(pool.getReserveData(asset).aTokenAddress);
-        IERC20(asset).safeTransfer(user, amount);
-    }
-
     function _fundAndSupply(address asset, address user, uint256 amount) internal {
-        _fund(asset, user, amount);
+        deal(asset, user, amount);
 
         vm.startPrank(user);
         IERC20(asset).safeApprove(address(pool), amount);
@@ -194,7 +188,7 @@ contract UpgradeTest is ForkTestBase {
     }
 
     function _fundAndRepay(address asset, address user, uint256 amount) internal {
-        _fund(asset, user, amount);
+        deal(asset, user, amount);
 
         vm.startPrank(user);
         IERC20(asset).safeApprove(address(pool), amount);
