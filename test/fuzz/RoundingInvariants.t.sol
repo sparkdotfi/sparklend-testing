@@ -24,13 +24,13 @@ contract RoundingInvariantTests is SparkLendTestBase {
         vm.prank(admin);
         poolConfigurator.setReserveBorrowing(address(borrowAsset), true);
 
-        _supplyAndUseAsCollateral(user, address(collateralAsset), 1_000_000 ether);
-        _supply(lender, address(borrowAsset), 1_000_000 ether);
+        _supplyAndUseAsCollateral(user, address(collateralAsset), 1_000_000e18);
+        _supply(lender, address(borrowAsset), 1_000_000e18);
 
         // Open a standing borrow so the fuzzed warp actually accrues interest and pushes the
         // liquidity/borrow indices above RAY — floor/ceil rounding only diverges there.
-        _supplyAndUseAsCollateral(borrower, address(collateralAsset), 1_000_000 ether);
-        _borrow(borrower, address(borrowAsset), 400_000 ether);
+        _supplyAndUseAsCollateral(borrower, address(collateralAsset), 1_000_000e18);
+        _borrow(borrower, address(borrowAsset), 400_000e18);
     }
 
     function testFuzz_depositWithdraw_neverReturnsMoreThanDeposited(
@@ -38,14 +38,14 @@ contract RoundingInvariantTests is SparkLendTestBase {
         uint256 depositAmount,
         uint256 withdrawAmount
     ) public {
-        warpTime = bound(warpTime, 0, 50 * 365 days);
+        warpTime = bound(warpTime, 0, 500 * 365 days);
 
         vm.warp(block.timestamp + warpTime);
 
         uint256 index = pool.getReserveNormalizedIncome(address(borrowAsset));
 
         // At index > RAY a supply below index/RAY floors its scaled mint to zero and reverts.
-        depositAmount = bound(depositAmount, index / 1e27 + 1, 1_000_000 ether);
+        depositAmount = bound(depositAmount, index / 1e27 + 1, 1_000_000e18);
 
         _supply(user, address(borrowAsset), depositAmount);
 
@@ -65,14 +65,14 @@ contract RoundingInvariantTests is SparkLendTestBase {
         uint256 borrowAmount,
         uint256 repayAmount
     ) public {
-        warpTime = bound(warpTime, 0, 50 * 365 days);
+        warpTime = bound(warpTime, 0, 500 * 365 days);
 
         vm.warp(block.timestamp + warpTime);
 
         // At index > RAY a repay below index/RAY floors its scaled debt burn to zero and reverts.
         uint256 index = pool.getReserveNormalizedVariableDebt(address(borrowAsset));
 
-        borrowAmount = bound(borrowAmount, index / 1e27 + 1, 400_000 ether);
+        borrowAmount = bound(borrowAmount, index / 1e27 + 1, 400_000e18);
         repayAmount  = bound(repayAmount,  index / 1e27 + 1, borrowAmount);
 
         _borrow(user, address(borrowAsset), borrowAmount);
