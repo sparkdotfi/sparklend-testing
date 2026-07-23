@@ -127,6 +127,10 @@ contract WadRayMathRoundingTests is Test {
         uint256 a = RAY + 1;
         uint256 b = 3;
 
+        uint256 scaled   = a * RAY;
+        uint256 expected = scaled / b + (scaled % b == 0 ? 0 : 1);
+
+        assertEq(mathWrapper.rayDivCeil(a, b), expected);
         assertEq(mathWrapper.rayDivCeil(0, b), 0);
 
         uint256 tooLargeA = type(uint256).max / RAY + 1;

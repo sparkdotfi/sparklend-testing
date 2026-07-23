@@ -38,20 +38,20 @@ contract RoundingInvariantTests is SparkLendTestBase {
         uint256 depositAmount,
         uint256 withdrawAmount
     ) public {
-        warpTime = bound(warpTime, 0, 500 * 365 days);
+        warpTime = _bound(warpTime, 0, 500 * 365 days);
 
         vm.warp(block.timestamp + warpTime);
 
         uint256 index = pool.getReserveNormalizedIncome(address(borrowAsset));
 
         // At index > RAY a supply below index/RAY floors its scaled mint to zero and reverts.
-        depositAmount = bound(depositAmount, index / 1e27 + 1, 1_000_000e18);
+        depositAmount = _bound(depositAmount, index / 1e27 + 1, 1_000_000e18);
 
         _supply(user, address(borrowAsset), depositAmount);
 
         // balanceOf floors, so it can sit a few wei below depositAmount — withdrawing more than
         // it reverts (NOT_ENOUGH_AVAILABLE_USER_BALANCE). Bound to the readable balance.
-        withdrawAmount = bound(withdrawAmount, 1, aBorrowAsset.balanceOf(user));
+        withdrawAmount = _bound(withdrawAmount, 1, aBorrowAsset.balanceOf(user));
 
         _withdraw(user, address(borrowAsset), withdrawAmount);
 
@@ -65,15 +65,15 @@ contract RoundingInvariantTests is SparkLendTestBase {
         uint256 borrowAmount,
         uint256 repayAmount
     ) public {
-        warpTime = bound(warpTime, 0, 500 * 365 days);
+        warpTime = _bound(warpTime, 0, 500 * 365 days);
 
         vm.warp(block.timestamp + warpTime);
 
         // At index > RAY a repay below index/RAY floors its scaled debt burn to zero and reverts.
         uint256 index = pool.getReserveNormalizedVariableDebt(address(borrowAsset));
 
-        borrowAmount = bound(borrowAmount, index / 1e27 + 1, 400_000e18);
-        repayAmount  = bound(repayAmount,  index / 1e27 + 1, borrowAmount);
+        borrowAmount = _bound(borrowAmount, index / 1e27 + 1, 400_000e18);
+        repayAmount  = _bound(repayAmount,  index / 1e27 + 1, borrowAmount);
 
         _borrow(user, address(borrowAsset), borrowAmount);
 
