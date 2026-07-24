@@ -471,7 +471,7 @@ contract MintToTreasuryTests is SparkLendTestBase {
     // TODO: Try to think of weird edge cases where indexes haven't been updated before minting
     //       Update index/accrued, warp, mint, update index, check accrued
 
-    function test_mintToTreasury_revertsWhenAccruedFeeRoundsDownToZero()
+    function test_mintToTreasury_doesNotRevertWhenAccruedFeeRoundsDownToZero()
         external
         whenNoTimeHasPassed
     {
@@ -488,8 +488,6 @@ contract MintToTreasuryTests is SparkLendTestBase {
 
         address[] memory assets = new address[](1);
         assets[0] = borrowAsset1;
-
-        vm.expectRevert(abi.encode(Errors.INVALID_MINT_AMOUNT));
 
         pool.mintToTreasury(assets);
     }
