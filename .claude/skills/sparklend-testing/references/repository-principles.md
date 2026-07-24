@@ -2,7 +2,7 @@
 
 ## Test Target And Scope
 
-The repository tests real protocol code pinned as submodules. Confirm the active pins with `git submodule status` before deriving behavior. The current master baseline pins `lib/sparklend-v1-core` at `8120e495061dc3315f0a86f682f4ca645a418bf7`; never assume a feature-branch or historical core API exists here.
+The repository tests real protocol code pinned as submodules. Confirm the active pins with `git submodule status` before deriving behavior. The current master baseline pins `lib/sparklend-v1-core` at `873b9df1cc00c7d547f91b40f29d9f5e9f5680c9`; never assume a feature-branch or historical core API exists here.
 
 Test changes normally belong in `test/`, test fixtures and mocks, or test-facing helpers. Protocol source, gitlinks, lockfiles, dependencies, and global configuration are separate review surfaces. A test that compiles only after moving a gitlink tests a different protocol.
 
