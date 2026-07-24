@@ -15,10 +15,10 @@ contract LiquidationFeeDoubleRoundTests is SparkLendTestBase {
 
     uint256 constant RAY = 1e27;
 
-    WadRayMathWrapper internal _wadRayMathWrapper;
+    WadRayMathWrapper internal math;
 
     function setUp() public override {
-        _wadRayMathWrapper = new WadRayMathWrapper();
+        math = new WadRayMathWrapper();
     }
 
     // Simple example of the two-leg ceil overshoot.
@@ -28,17 +28,17 @@ contract LiquidationFeeDoubleRoundTests is SparkLendTestBase {
         uint256 actualCollateralToLiquidate  = 367;
         uint256 liquidationProtocolFeeAmount = 4;
 
-        uint256 balanceOfUser = _wadRayMathWrapper.rayMulFloor(scaledBalanceOfUser, index);
+        uint256 balanceOfUser = math.rayMulFloor(scaledBalanceOfUser, index);
 
         // The budget respects the user's displayed balance
         assertLe(actualCollateralToLiquidate + liquidationProtocolFeeAmount, balanceOfUser);
 
         // The combined burn would be safe
-        assertLe(_wadRayMathWrapper.rayDivCeil(actualCollateralToLiquidate + liquidationProtocolFeeAmount, index), scaledBalanceOfUser);
+        assertLe(math.rayDivCeil(actualCollateralToLiquidate + liquidationProtocolFeeAmount, index), scaledBalanceOfUser);
 
         // But the two SEPARATE ceil legs overshoot the scaled balance.
-        uint256 scaledA = _wadRayMathWrapper.rayDivCeil(actualCollateralToLiquidate,  index);
-        uint256 scaledB = _wadRayMathWrapper.rayDivCeil(liquidationProtocolFeeAmount, index);
+        uint256 scaledA = math.rayDivCeil(actualCollateralToLiquidate,  index);
+        uint256 scaledB = math.rayDivCeil(liquidationProtocolFeeAmount, index);
 
         assertGe(scaledA + scaledB, scaledBalanceOfUser);
 
@@ -47,7 +47,7 @@ contract LiquidationFeeDoubleRoundTests is SparkLendTestBase {
         assertEq(scaledBalanceOfUser, 147);
     }
 
-    function testFuzz_twoLegCeil_overshootIsSplitArtifact(
+    function testFuzz_twoLegCeil_overshoots(
         uint256 scaledBalanceOfUser,
         uint256 index,
         uint256 actualCollateralToLiquidate
@@ -55,17 +55,17 @@ contract LiquidationFeeDoubleRoundTests is SparkLendTestBase {
         scaledBalanceOfUser = _bound(scaledBalanceOfUser, 2,       1e30);
         index               = _bound(index,               RAY + 1, 1e6 * RAY); // must exceed RAY for ceil to diverge
 
-        uint256 balanceOfUser = _wadRayMathWrapper.rayMulFloor(scaledBalanceOfUser, index);
+        uint256 balanceOfUser = math.rayMulFloor(scaledBalanceOfUser, index);
 
         vm.assume(balanceOfUser >= 2);
 
-        actualCollateralToLiquidate = _bound(actualCollateralToLiquidate, 1, balanceOfUser - 1);
+        actualCollateralToLiquidate = _bound(actualCollateralToLiquidate, 1, balanceOfUser);
 
         uint256 liquidationProtocolFeeAmount = balanceOfUser - actualCollateralToLiquidate; // whole budget consumed (full-collateral liquidation shape)
 
-        uint256 scaledA  = _wadRayMathWrapper.rayDivCeil(actualCollateralToLiquidate,                                index);
-        uint256 scaledB  = _wadRayMathWrapper.rayDivCeil(liquidationProtocolFeeAmount,                               index);
-        uint256 combined = _wadRayMathWrapper.rayDivCeil(actualCollateralToLiquidate + liquidationProtocolFeeAmount, index);
+        uint256 scaledA  = math.rayDivCeil(actualCollateralToLiquidate,                                index);
+        uint256 scaledB  = math.rayDivCeil(liquidationProtocolFeeAmount,                               index);
+        uint256 combined = math.rayDivCeil(actualCollateralToLiquidate + liquidationProtocolFeeAmount, index);
 
         // The single combined conversion is always within the scaled balance.
         assertLe(combined, scaledBalanceOfUser);
