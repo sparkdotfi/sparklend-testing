@@ -1,13 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.0;
 
-import "forge-std/Test.sol";
+import { Test } from "../../../lib/forge-std/src/Test.sol";
 
-import { IERC20 } from "erc20-helpers/interfaces/IERC20.sol";
+import { IERC20 } from "../../../lib/erc20-helpers/src/interfaces/IERC20.sol";
 
-import { IAToken } from "sparklend-v1-core/contracts/interfaces/IAToken.sol";
+import { IAToken } from "../../../lib/sparklend-v1-core/contracts/interfaces/IAToken.sol";
 
-import { SparkLendTestBase } from "test/SparkLendTestBase.sol";
+import { Errors } from "../../../lib/sparklend-v1-core/contracts/protocol/libraries/helpers/Errors.sol";
+
+import { PoolLogic } from "../../../lib/sparklend-v1-core/contracts/protocol/libraries/logic/PoolLogic.sol";
+
+import { SparkLendTestBase } from "../../SparkLendTestBase.sol";
 
 contract MintToTreasuryTests is SparkLendTestBase {
 
@@ -466,5 +470,28 @@ contract MintToTreasuryTests is SparkLendTestBase {
 
     // TODO: Try to think of weird edge cases where indexes haven't been updated before minting
     //       Update index/accrued, warp, mint, update index, check accrued
+
+    function test_mintToTreasury_revertsWhenAccruedFeeRoundsDownToZero()
+        external
+        whenNoTimeHasPassed
+    {
+        _repay(borrower, borrowAsset1, 99.999995e18);
+
+        vm.prank(admin);
+        poolConfigurator.setReserveFactor(borrowAsset1, 1);
+
+        vm.warp(2);
+
+        _supply(borrower, borrowAsset1, 1e18);
+
+        assertEq(pool.getReserveData(borrowAsset1).accruedToTreasury, 1);
+
+        address[] memory assets = new address[](1);
+        assets[0] = borrowAsset1;
+
+        vm.expectRevert(abi.encode(Errors.INVALID_MINT_AMOUNT));
+
+        pool.mintToTreasury(assets);
+    }
 
 }
