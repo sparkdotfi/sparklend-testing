@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.0;
 
-import "forge-std/Test.sol";
+import { Test } from "../../lib/forge-std/src/Test.sol";
 
-import { WadRayMathWrapper } from "sparklend-v1-core/contracts/mocks/tests/WadRayMathWrapper.sol";
+import { WadRayMathWrapper } from "../../lib/sparklend-v1-core/contracts/mocks/tests/WadRayMathWrapper.sol";
 
 contract WadRayMathRoundingTests is Test {
 
@@ -25,7 +25,7 @@ contract WadRayMathRoundingTests is Test {
     /*** rayMul floor / ceil                                                                    ***/
     /**********************************************************************************************/
 
-    function testFuzz_rayMul_floorCeil_exact(uint256 a, uint256 b) public {
+    function testFuzz_rayMul_floorCeil_exact(uint256 a, uint256 b) external view {
         a = _bound(a, 0, MAX_AMOUNT);
         b = _bound(b, 0, MAX_INDEX);
 
@@ -41,14 +41,14 @@ contract WadRayMathRoundingTests is Test {
         assertEq(ceilVal, expectedFloor + (remainder == 0 ? 0 : 1));
     }
 
-    function testFuzz_rayMul_ceil_exactDivisionNotOverRounded(uint256 x) public {
+    function testFuzz_rayMul_ceil_exactDivisionNotOverRounded(uint256 x) external view {
         x = _bound(x, 0, MAX_AMOUNT);
 
         assertEq(mathWrapper.rayMulCeil(x, RAY),  x);
         assertEq(mathWrapper.rayMulFloor(x, RAY), x);
     }
 
-    function test_rayMulFloor_exampleValues() public {
+    function test_rayMulFloor_exampleValues() external {
         uint256 a = RAY + 1;
         uint256 b = RAY + 1;
 
@@ -62,7 +62,7 @@ contract WadRayMathRoundingTests is Test {
         mathWrapper.rayMulFloor(tooLargeA, b);
     }
 
-    function test_rayMulCeil_exampleValues() public {
+    function test_rayMulCeil_exampleValues() external {
         uint256 a = RAY + 1;
         uint256 b = RAY + 1;
 
@@ -81,7 +81,7 @@ contract WadRayMathRoundingTests is Test {
     /*** rayDiv floor / ceil                                                                    ***/
     /**********************************************************************************************/
 
-    function testFuzz_rayDiv_floorCeil_exact(uint256 a, uint256 b) public {
+    function testFuzz_rayDiv_floorCeil_exact(uint256 a, uint256 b) external view {
         a = _bound(a, 0, MAX_AMOUNT);
         b = _bound(b, 1, MAX_INDEX);
 
@@ -95,14 +95,14 @@ contract WadRayMathRoundingTests is Test {
         assertEq(ceilVal,  expectedFloor + (remainder == 0 ? 0 : 1));  // rayDivCeil = floor + 1 if remainder > 0
     }
 
-    function testFuzz_rayDiv_ceil_exactDivisionNotOverRounded(uint256 x) public {
+    function testFuzz_rayDiv_ceil_exactDivisionNotOverRounded(uint256 x) external view {
         x = _bound(x, 0, MAX_AMOUNT);
 
         assertEq(mathWrapper.rayDivCeil(x, RAY),  x);
         assertEq(mathWrapper.rayDivFloor(x, RAY), x);
     }
 
-    function test_rayDiv_byZero_reverts() public {
+    function test_rayDiv_byZero_reverts() external {
         vm.expectRevert();
         mathWrapper.rayDivFloor(1, 0);
 
@@ -110,7 +110,7 @@ contract WadRayMathRoundingTests is Test {
         mathWrapper.rayDivCeil(1, 0);
     }
 
-    function test_rayDivFloor_exampleValues() public {
+    function test_rayDivFloor_exampleValues() external {
         uint256 a = RAY + 1;
         uint256 b = 3;
 
@@ -123,7 +123,7 @@ contract WadRayMathRoundingTests is Test {
         mathWrapper.rayDivFloor(tooLargeA, b);
     }
 
-    function test_rayDivCeil_exampleValues() public {
+    function test_rayDivCeil_exampleValues() external {
         uint256 a = RAY + 1;
         uint256 b = 3;
 
@@ -139,6 +139,46 @@ contract WadRayMathRoundingTests is Test {
         mathWrapper.rayDivCeil(tooLargeA, b);
     }
 
+    function testFuzz_underlyingRoundTrip_divFloorThenMulCeil(uint256 underlying, uint256 index) external view {
+        underlying = _bound(underlying, 0,   MAX_AMOUNT);
+        index      = _bound(index,  RAY, MAX_INDEX);
+
+        uint256 scaled           = mathWrapper.rayDivFloor(underlying, index);
+        uint256 backToUnderlying = mathWrapper.rayMulCeil(scaled, index);
+
+        assertLe(backToUnderlying, underlying);
+    }
+
+    function testFuzz_underlyingRoundTrip_divFloorThenMulFloor(uint256 underlying, uint256 index) external view {
+        underlying = _bound(underlying, 0,   MAX_AMOUNT);
+        index      = _bound(index,  RAY, MAX_INDEX);
+
+        uint256 scaled           = mathWrapper.rayDivFloor(underlying, index);
+        uint256 backToUnderlying = mathWrapper.rayMulFloor(scaled, index);
+
+        assertLe(backToUnderlying, underlying);
+    }
+
+    function testFuzz_underlyingRoundTrip_divCeilThenMulFloor(uint256 underlying, uint256 index) external view {
+        underlying = _bound(underlying, 0,   MAX_AMOUNT);
+        index      = _bound(index,  RAY, MAX_INDEX);
+
+        uint256 scaled           = mathWrapper.rayDivCeil(underlying, index);
+        uint256 backToUnderlying = mathWrapper.rayMulFloor(scaled, index);
+
+        assertGe(backToUnderlying, underlying);
+    }
+
+    function testFuzz_underlyingRoundTrip_divCeilThenMulCeil(uint256 underlying, uint256 index) external view {
+        underlying = _bound(underlying, 0,   MAX_AMOUNT);
+        index      = _bound(index,  RAY, MAX_INDEX);
+
+        uint256 scaled           = mathWrapper.rayDivCeil(underlying, index);
+        uint256 backToUnderlying = mathWrapper.rayMulCeil(scaled, index);
+
+        assertGe(backToUnderlying, underlying);
+    }
+
     /**********************************************************************************************/
     /*** Round-trip direction guarantees (the core protocol-favoring properties)                ***/
     /**********************************************************************************************/
@@ -147,14 +187,22 @@ contract WadRayMathRoundingTests is Test {
     // transfer/withdraw/liquidation converts the underlying amount back to scaled via rayDivCeil.
     // The round-trip must never exceed the original scaled balance, otherwise the burn could
     // destroy more scaled shares than the user actually holds (underflow / silent over-burn).
-    function testFuzz_scaledRoundTrip_floorThenCeil_neverExceeds(uint256 scaled, uint256 index)
-        public
-    {
+    function testFuzz_scaledRoundTrip_mulFloorThenDivCeil(uint256 scaled, uint256 index) external view {
         scaled = _bound(scaled, 0,   MAX_AMOUNT);
         index  = _bound(index,  RAY, MAX_INDEX);
 
         uint256 underlying   = mathWrapper.rayMulFloor(scaled, index);
         uint256 backToScaled = mathWrapper.rayDivCeil(underlying, index);
+
+        assertEq(backToScaled, scaled);
+    }
+
+    function testFuzz_scaledRoundTrip_mulFloorThenDivFloor(uint256 scaled, uint256 index) external view {
+        scaled = _bound(scaled, 0,   MAX_AMOUNT);
+        index  = _bound(index,  RAY, MAX_INDEX);
+
+        uint256 underlying   = mathWrapper.rayMulFloor(scaled, index);
+        uint256 backToScaled = mathWrapper.rayDivFloor(underlying, index);
 
         assertLe(backToScaled, scaled);
     }
@@ -163,9 +211,7 @@ contract WadRayMathRoundingTests is Test {
     // quoted at least their true obligation), and paying that exact amount burns scaled debt
     // via rayDivFloor. The round-trip must return exactly the original scaled amount so a
     // repay-max fully closes the position with no 1-wei dust debt remaining.
-    function testFuzz_debtRoundTrip_ceilThenFloor_neverExceeds(uint256 scaled, uint256 index)
-        public
-    {
+    function testFuzz_scaledRoundTrip_mulCeilThenDivFloor(uint256 scaled, uint256 index) external view {
         scaled = _bound(scaled, 0,   MAX_AMOUNT);
         index  = _bound(index,  RAY, MAX_INDEX);
 
@@ -173,6 +219,16 @@ contract WadRayMathRoundingTests is Test {
         uint256 backToScaled = mathWrapper.rayDivFloor(underlying, index);
 
         assertEq(backToScaled, scaled);
+    }
+
+    function testFuzz_scaledRoundTrip_mulCeilThenDivCeil(uint256 scaled, uint256 index) external view {
+        scaled = _bound(scaled, 0,   MAX_AMOUNT);
+        index  = _bound(index,  RAY, MAX_INDEX);
+
+        uint256 underlying   = mathWrapper.rayMulCeil(scaled, index);
+        uint256 backToScaled = mathWrapper.rayDivCeil(underlying, index);
+
+        assertGe(backToScaled, scaled);
     }
 
 }
