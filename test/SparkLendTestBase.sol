@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.0;
 
-import "forge-std/Test.sol";
+import { console, console2, Test } from "forge-std/Test.sol";
 
 import { VmSafe } from "forge-std/Vm.sol";
 
@@ -47,7 +47,7 @@ contract SparkLendTestBase is UserActions {
 
     address admin          = makeAddr("admin");
     address emergencyAdmin = makeAddr("emergencyAdmin");
-    address riskAdmin      = makeAddr("riskAdmin"); 
+    address riskAdmin      = makeAddr("riskAdmin");
     address treasury       = makeAddr("treasury");  // TODO: Use real treasury and demo withdrawal
 
     AaveOracle                    aaveOracle;
