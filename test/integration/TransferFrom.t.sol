@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.0;
 
-import { SparkLendTestBase } from "test/SparkLendTestBase.sol";
+import { WadRayMathWrapper } from "../../lib/sparklend-v1-core/contracts/mocks/tests/WadRayMathWrapper.sol";
 
-import { ReserveLogicWrapper } from "test/fuzz/wrappers/ReserveLogicWrapper.sol";
+import { SparkLendTestBase } from "../SparkLendTestBase.sol";
 
-import { WadRayMathWrapper } from "sparklend-v1-core/contracts/mocks/tests/WadRayMathWrapper.sol";
+import { ReserveLogicWrapper } from "../fuzz/wrappers/ReserveLogicWrapper.sol";
 
 contract TransferFromTestBase is SparkLendTestBase {
 
@@ -173,6 +173,34 @@ contract TransferFromRoundingTests is TransferFromTestBase {
             aBorrowAsset.allowance(owner, spender),
             expectedAllowanceSpent > startingAllowance ? 0 : startingAllowance - expectedAllowanceSpent
         );
+    }
+
+    function testFuzz_maxTransferFrom(uint256 liquidityIndex, uint256 balance) external {
+        WadRayMathWrapper math = new WadRayMathWrapper();
+
+        liquidityIndex = _bound(liquidityIndex, RAY, RAY * 3);
+        balance        = _bound(balance,        100, 1e9 * 1e18);   // 1 billion
+
+        _supply(owner, address(borrowAsset), balance);
+
+        _setLiquidityIndex(liquidityIndex);
+
+        uint256 expectedSenderBalance = math.rayMulFloor(balance, liquidityIndex);
+
+        assertEq(aBorrowAsset.balanceOf(owner),     expectedSenderBalance);
+        assertEq(aBorrowAsset.balanceOf(recipient), 0);
+
+        vm.prank(owner);
+        aBorrowAsset.approve(spender, expectedSenderBalance);
+
+        vm.prank(spender);
+        aBorrowAsset.transferFrom(owner, recipient, expectedSenderBalance);
+
+        uint256 scaledTransferAmount     = math.rayDivCeil(expectedSenderBalance, liquidityIndex);
+        uint256 expectedRecipientBalance = math.rayMulFloor(scaledTransferAmount, liquidityIndex);
+
+        assertEq(aBorrowAsset.balanceOf(owner),     0);
+        assertEq(aBorrowAsset.balanceOf(recipient), expectedRecipientBalance);
     }
 
 }
