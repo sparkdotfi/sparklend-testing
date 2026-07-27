@@ -50,11 +50,32 @@ contract WithdrawRoundingTests is WithdrawTestBase {
 
         deal(address(borrowAsset), address(aBorrowAsset), expectedSenderBalance);
 
-        assertEq(aBorrowAsset.balanceOf(owner),     expectedSenderBalance);
-        assertEq(aBorrowAsset.balanceOf(recipient), 0);
+        assertEq(aBorrowAsset.balanceOf(owner), expectedSenderBalance);
 
         vm.prank(owner);
         pool.withdraw(address(borrowAsset), expectedSenderBalance, owner);
+
+        assertEq(aBorrowAsset.balanceOf(owner), 0);
+    }
+
+    function testFuzz_maxWithdrawUsingUint256Max(uint256 liquidityIndex, uint256 balance) external {
+        WadRayMathWrapper math = new WadRayMathWrapper();
+
+        liquidityIndex = _bound(liquidityIndex, RAY, RAY * 3);
+        balance        = _bound(balance,        100, 1e9 * 1e18);   // 1 billion
+
+        _supply(owner, address(borrowAsset), balance);
+
+        _setLiquidityIndex(liquidityIndex);
+
+        uint256 expectedSenderBalance = math.rayMulFloor(balance, liquidityIndex);
+
+        deal(address(borrowAsset), address(aBorrowAsset), expectedSenderBalance);
+
+        assertEq(aBorrowAsset.balanceOf(owner), expectedSenderBalance);
+
+        vm.prank(owner);
+        pool.withdraw(address(borrowAsset), type(uint256).max, owner);
 
         assertEq(aBorrowAsset.balanceOf(owner), 0);
     }
