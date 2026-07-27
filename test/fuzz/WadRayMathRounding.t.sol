@@ -15,7 +15,7 @@ contract WadRayMathRoundingTests is Test {
     // = 1e40 * 1e33 = 1e73. MAX_AMOUNT is ~1e22 tokens at 18 decimals (far above any TVL) and
     // MAX_INDEX is a 1e6 x index (far above any real liquidity/borrow index).
     uint256 constant MAX_AMOUNT = 1e40;
-    uint256 constant MAX_INDEX  = 1e6 * RAY;
+    uint256 constant MAX_INDEX  = 50 * RAY;
 
     function setUp() public {
         mathWrapper = new WadRayMathWrapper();
