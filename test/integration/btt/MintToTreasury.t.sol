@@ -489,6 +489,10 @@ contract MintToTreasuryTests is SparkLendTestBase {
         address[] memory assets = new address[](1);
         assets[0] = borrowAsset1;
 
+        address aBorrowAsset = pool.getReserveData(borrowAsset1).aTokenAddress;
+
+        vm.expectCall(aBorrowAsset, abi.encode(IAToken.mintToTreasury.selector), 0);
+
         pool.mintToTreasury(assets);
     }
 
