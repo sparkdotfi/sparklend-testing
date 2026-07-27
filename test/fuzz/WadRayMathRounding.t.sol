@@ -164,7 +164,7 @@ contract WadRayMathRoundingTests is Test {
         uint256 underlying   = mathWrapper.rayMulFloor(scaled, index);
         uint256 backToScaled = mathWrapper.rayDivFloor(underlying, index);
 
-        assertLe(backToScaled, scaled);
+        assertTrue(scaled - backToScaled <= 1); // Can't round down more than 1
     }
 
     // debtToken repay-max path: balanceOf() returns rayMulCeil(scaled, index) (so users are
@@ -188,7 +188,7 @@ contract WadRayMathRoundingTests is Test {
         uint256 underlying   = mathWrapper.rayMulCeil(scaled, index);
         uint256 backToScaled = mathWrapper.rayDivCeil(underlying, index);
 
-        assertGe(backToScaled, scaled);
+        assertTrue(backToScaled - scaled <= 1); // Can't round up more than 1
     }
 
     function testFuzz_underlyingRoundTrip_divFloorThenMulCeil(uint256 underlying, uint256 index) external view {
@@ -198,7 +198,9 @@ contract WadRayMathRoundingTests is Test {
         uint256 scaled           = mathWrapper.rayDivFloor(underlying, index);
         uint256 backToUnderlying = mathWrapper.rayMulCeil(scaled, index);
 
-        assertLe(backToUnderlying, underlying);
+        // Maximum error in scaledAmount scales with index, every multiple of RAY adds 1 to the error.
+        assertTrue(underlying - backToUnderlying <= index / RAY);
+        assertTrue(underlying - backToUnderlying <= 50);
     }
 
     function testFuzz_underlyingRoundTrip_divFloorThenMulFloor(uint256 underlying, uint256 index) external view {
@@ -208,7 +210,10 @@ contract WadRayMathRoundingTests is Test {
         uint256 scaled           = mathWrapper.rayDivFloor(underlying, index);
         uint256 backToUnderlying = mathWrapper.rayMulFloor(scaled, index);
 
-        assertLe(backToUnderlying, underlying);
+        // Maximum error in scaledAmount scales with index, every multiple of RAY adds 1 to the error.
+        // In addition, two roundings in the same direction adds 1 to the error on the underlying side.
+        assertTrue(underlying - backToUnderlying <= index / RAY + 1);
+        assertTrue(underlying - backToUnderlying <= 50);
     }
 
     function testFuzz_underlyingRoundTrip_divCeilThenMulFloor(uint256 underlying, uint256 index) external view {
@@ -218,7 +223,9 @@ contract WadRayMathRoundingTests is Test {
         uint256 scaled           = mathWrapper.rayDivCeil(underlying, index);
         uint256 backToUnderlying = mathWrapper.rayMulFloor(scaled, index);
 
-        assertGe(backToUnderlying, underlying);
+        // Maximum error in scaledAmount scales with index, every multiple of RAY adds 1 to the error.
+        assertTrue(backToUnderlying - underlying <= index / RAY);
+        assertTrue(backToUnderlying - underlying <= 50);
     }
 
     function testFuzz_underlyingRoundTrip_divCeilThenMulCeil(uint256 underlying, uint256 index) external view {
@@ -228,7 +235,10 @@ contract WadRayMathRoundingTests is Test {
         uint256 scaled           = mathWrapper.rayDivCeil(underlying, index);
         uint256 backToUnderlying = mathWrapper.rayMulCeil(scaled, index);
 
-        assertGe(backToUnderlying, underlying);
+        // Maximum error in scaledAmount scales with index, every multiple of RAY adds 1 to the error.
+        // In addition, two roundings in the same direction adds 1 to the error on the underlying side.
+        assertTrue(backToUnderlying - underlying <= index / RAY + 1);
+        assertTrue(backToUnderlying - underlying <= 50);
     }
 
 }
