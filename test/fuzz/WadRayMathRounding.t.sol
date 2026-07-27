@@ -139,46 +139,6 @@ contract WadRayMathRoundingTests is Test {
         mathWrapper.rayDivCeil(tooLargeA, b);
     }
 
-    function testFuzz_underlyingRoundTrip_divFloorThenMulCeil(uint256 underlying, uint256 index) external view {
-        underlying = _bound(underlying, 0,   MAX_AMOUNT);
-        index      = _bound(index,  RAY, MAX_INDEX);
-
-        uint256 scaled           = mathWrapper.rayDivFloor(underlying, index);
-        uint256 backToUnderlying = mathWrapper.rayMulCeil(scaled, index);
-
-        assertLe(backToUnderlying, underlying);
-    }
-
-    function testFuzz_underlyingRoundTrip_divFloorThenMulFloor(uint256 underlying, uint256 index) external view {
-        underlying = _bound(underlying, 0,   MAX_AMOUNT);
-        index      = _bound(index,  RAY, MAX_INDEX);
-
-        uint256 scaled           = mathWrapper.rayDivFloor(underlying, index);
-        uint256 backToUnderlying = mathWrapper.rayMulFloor(scaled, index);
-
-        assertLe(backToUnderlying, underlying);
-    }
-
-    function testFuzz_underlyingRoundTrip_divCeilThenMulFloor(uint256 underlying, uint256 index) external view {
-        underlying = _bound(underlying, 0,   MAX_AMOUNT);
-        index      = _bound(index,  RAY, MAX_INDEX);
-
-        uint256 scaled           = mathWrapper.rayDivCeil(underlying, index);
-        uint256 backToUnderlying = mathWrapper.rayMulFloor(scaled, index);
-
-        assertGe(backToUnderlying, underlying);
-    }
-
-    function testFuzz_underlyingRoundTrip_divCeilThenMulCeil(uint256 underlying, uint256 index) external view {
-        underlying = _bound(underlying, 0,   MAX_AMOUNT);
-        index      = _bound(index,  RAY, MAX_INDEX);
-
-        uint256 scaled           = mathWrapper.rayDivCeil(underlying, index);
-        uint256 backToUnderlying = mathWrapper.rayMulCeil(scaled, index);
-
-        assertGe(backToUnderlying, underlying);
-    }
-
     /**********************************************************************************************/
     /*** Round-trip direction guarantees (the core protocol-favoring properties)                ***/
     /**********************************************************************************************/
@@ -229,6 +189,46 @@ contract WadRayMathRoundingTests is Test {
         uint256 backToScaled = mathWrapper.rayDivCeil(underlying, index);
 
         assertGe(backToScaled, scaled);
+    }
+
+    function testFuzz_underlyingRoundTrip_divFloorThenMulCeil(uint256 underlying, uint256 index) external view {
+        underlying = _bound(underlying, 0,   MAX_AMOUNT);
+        index      = _bound(index,      RAY, MAX_INDEX);
+
+        uint256 scaled           = mathWrapper.rayDivFloor(underlying, index);
+        uint256 backToUnderlying = mathWrapper.rayMulCeil(scaled, index);
+
+        assertLe(backToUnderlying, underlying);
+    }
+
+    function testFuzz_underlyingRoundTrip_divFloorThenMulFloor(uint256 underlying, uint256 index) external view {
+        underlying = _bound(underlying, 0,   MAX_AMOUNT);
+        index      = _bound(index,      RAY, MAX_INDEX);
+
+        uint256 scaled           = mathWrapper.rayDivFloor(underlying, index);
+        uint256 backToUnderlying = mathWrapper.rayMulFloor(scaled, index);
+
+        assertLe(backToUnderlying, underlying);
+    }
+
+    function testFuzz_underlyingRoundTrip_divCeilThenMulFloor(uint256 underlying, uint256 index) external view {
+        underlying = _bound(underlying, 0,   MAX_AMOUNT);
+        index      = _bound(index,      RAY, MAX_INDEX);
+
+        uint256 scaled           = mathWrapper.rayDivCeil(underlying, index);
+        uint256 backToUnderlying = mathWrapper.rayMulFloor(scaled, index);
+
+        assertGe(backToUnderlying, underlying);
+    }
+
+    function testFuzz_underlyingRoundTrip_divCeilThenMulCeil(uint256 underlying, uint256 index) external view {
+        underlying = _bound(underlying, 0,   MAX_AMOUNT);
+        index      = _bound(index,      RAY, MAX_INDEX);
+
+        uint256 scaled           = mathWrapper.rayDivCeil(underlying, index);
+        uint256 backToUnderlying = mathWrapper.rayMulCeil(scaled, index);
+
+        assertGe(backToUnderlying, underlying);
     }
 
 }
