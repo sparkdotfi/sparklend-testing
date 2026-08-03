@@ -130,7 +130,7 @@ contract PoolHandler is Test {
 
         vm.assume(debt >= MIN_AMOUNT);
 
-        // ~10% chance of max repay if entire balance is repayable.
+        // ~10% chance of max repay if entire debt is repayable.
         amount = _bound(amount, MIN_AMOUNT, (debt * 11) / 10);
 
         deal(asset, actor, IERC20Like(asset).balanceOf(actor) + amount);
@@ -257,6 +257,12 @@ contract PoolHandler is Test {
     /*** Helpers                                                                                ***/
     /**********************************************************************************************/
 
+    // Exposed for the post-campaign wind-down in Invariants.t.sol. Not a fuzz target: the campaign
+    // only runs the selectors registered in setUp.
+    function maxWithdrawable(address actor, address asset) external view returns (uint256) {
+        return _getMaxWithdrawable(actor, asset);
+    }
+
     function _getAssetPrice(address asset) internal view returns (uint256) {
         return IAaveOracleLike(pool.ADDRESSES_PROVIDER().getPriceOracle()).getAssetPrice(asset);
     }
@@ -270,6 +276,10 @@ contract PoolHandler is Test {
 
         // If actor has no debt, they can withdraw their entire balance
         if (totalDebtBase == 0) return absoluteMaxBalance;
+
+        // A liquidation can seize every last unit of collateral while leaving debt behind, which
+        // zeroes the average threshold. Nothing is safely withdrawable in that state.
+        if (currentLiquidityThreshold == 0) return 0;
 
         // 3. Calculate minimum collateral required in Base Currency to keep Health Factor at 1.0
         // currentLiquidityThreshold is formatted in 4 decimals (e.g., 8500 = 85%), so we multiply by 10000
@@ -358,7 +368,7 @@ contract PoolHandler is Test {
 
         // 3. Check specific bit offsets for this asset index
         isCollateral = (userConfig >> ((assetIndex << 1) + 1)) & 1 == 1;
-        isBorrowing  = (userConfig >> (assetIndex << 2)) & 1 == 1;
+        isBorrowing  = (userConfig >> (assetIndex << 1)) & 1 == 1;
     }
 
     function _getTopPositions(address user) internal view returns (address highestCollateralAsset, address highestDebtAsset) {
