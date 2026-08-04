@@ -3,6 +3,8 @@ pragma solidity ^0.8.0;
 
 import { Test } from "../../lib/forge-std/src/Test.sol";
 
+import { DataTypes } from "../../lib/sparklend-v1-core/contracts/protocol/libraries/types/DataTypes.sol";
+
 import { AToken }            from "../../lib/sparklend-v1-core/contracts/protocol/tokenization/AToken.sol";
 import { VariableDebtToken } from "../../lib/sparklend-v1-core/contracts/protocol/tokenization/VariableDebtToken.sol";
 import { WadRayMath }        from "../../lib/sparklend-v1-core/contracts/protocol/libraries/math/WadRayMath.sol";
@@ -12,6 +14,8 @@ import { SparkLendTestBase } from "../SparkLendTestBase.sol";
 import { PoolHandler } from "./handlers/PoolHandler.sol";
 
 interface IERC20Like {
+
+    function approve(address, uint256) external;
 
     function balanceOf(address) external view returns (uint256);
 
@@ -23,6 +27,8 @@ contract Invariants is SparkLendTestBase {
 
     using WadRayMath for uint256;
 
+    uint256 internal constant MIN_AMOUNT = 0.000000000001e18;  // 1e6
+
     address internal handler;
 
     address[] internal actors;
@@ -30,6 +36,9 @@ contract Invariants is SparkLendTestBase {
     address[] internal holders;
 
     address internal bootstrap = makeAddr("bootstrap");
+
+    mapping(address => uint256) internal lastLiquidityIndex;
+    mapping(address => uint256) internal lastVariableBorrowIndex;
 
     function setUp() public virtual override {
         super.setUp();
@@ -155,6 +164,132 @@ contract Invariants is SparkLendTestBase {
                 VariableDebtToken(vDebt).scaledTotalSupply(),
                 "variable debt scaled conservation broken"
             );
+        }
+    }
+
+    function afterInvariant() public {
+        _checkInvariantsOverTime();
+
+        // Solvency must hold whether the treasury's claim is unminted or real aToken supply.
+        pool.mintToTreasury(assets);
+
+        _checkInvariantsOverTime();
+
+        _drainLiquidity();
+
+        _checkInvariantsOverTime();
+
+        _repayAllDebt();
+
+        _checkInvariantsOverTime();
+
+        // Accrual stopped at zero debt, but the repayments booked the reserve factor's cut.
+        pool.mintToTreasury(assets);
+
+        _fullExit();
+
+        for (uint256 i; i < assets.length; ++i) {
+            address asset = assets[i];
+
+            address aToken = pool.getReserveData(asset).aTokenAddress;
+            address vDebt  = pool.getReserveData(asset).variableDebtTokenAddress;
+
+            assertEq(VariableDebtToken(vDebt).scaledTotalSupply(), 0, "debt outstanding");
+            assertEq(AToken(aToken).scaledTotalSupply(),           0, "claims outstanding");
+
+            assertEq(uint256(pool.getReserveData(asset).accruedToTreasury), 0, "treasury accrual outstanding");
+        }
+    }
+
+    function _checkInvariantsOverTime() internal {
+        this.invariant_full();
+        _assertReserveSanity();
+
+        skip(30 days);
+
+        this.invariant_full();
+        _assertReserveSanity();
+    }
+
+    // Monotonicity is tracked across calls, so these have to run in sequence.
+    function _assertReserveSanity() internal {
+        for (uint256 i; i < assets.length; ++i) {
+            address asset = assets[i];
+
+            DataTypes.ReserveData memory data = pool.getReserveData(asset);
+
+            assertGe(data.liquidityIndex,      lastLiquidityIndex[asset],      "liquidity index decreased");
+            assertGe(data.variableBorrowIndex, lastVariableBorrowIndex[asset], "borrow index decreased");
+
+            lastLiquidityIndex[asset]      = data.liquidityIndex;
+            lastVariableBorrowIndex[asset] = data.variableBorrowIndex;
+
+            // Normalized values fold in the accrual since the last index write.
+            assertGe(pool.getReserveNormalizedIncome(asset),       data.liquidityIndex,      "income below index");
+            assertGe(pool.getReserveNormalizedVariableDebt(asset), data.variableBorrowIndex, "debt below index");
+
+            // Utilization is capped at 100% and the reserve factor only ever takes a cut.
+            assertLe(data.currentLiquidityRate, data.currentVariableBorrowRate, "supply rate above borrow rate");
+        }
+    }
+
+    // Bank run: every holder pulls out as much as their health factor and the reserve's cash allow,
+    // which parks each borrower on a health factor of exactly 1.0.
+    function _drainLiquidity() internal {
+        for (uint256 i; i < holders.length; ++i) {
+            for (uint256 j; j < assets.length; ++j) {
+                skip(2 minutes);
+
+                address holder = holders[i];
+                address asset  = assets[j];
+
+                uint256 cash = IERC20Like(asset).balanceOf(pool.getReserveData(asset).aTokenAddress);
+                uint256 max  = PoolHandler(handler).maxWithdrawable(holder, asset);
+
+                uint256 amount = max > cash ? cash : max;
+
+                if (amount < MIN_AMOUNT) continue;
+
+                vm.prank(holder);
+                pool.withdraw(asset, amount, holder);
+            }
+        }
+    }
+
+    // Funds are dealt, so no repayment is liquidity constrained and all collateral ends free. No
+    // time passes here, so the debt read stays exact.
+    function _repayAllDebt() internal {
+        for (uint256 i; i < holders.length; ++i) {
+            for (uint256 j; j < assets.length; ++j) {
+                address holder = holders[i];
+                address asset  = assets[j];
+
+                uint256 debt = IERC20Like(pool.getReserveData(asset).variableDebtTokenAddress).balanceOf(holder);
+
+                if (debt == 0) continue;
+
+                deal(asset, holder, IERC20Like(asset).balanceOf(holder) + debt);
+
+                vm.startPrank(holder);
+                IERC20Like(asset).approve(address(pool), debt);
+                pool.repay(asset, type(uint256).max, 2, holder);
+                vm.stopPrank();
+            }
+        }
+    }
+
+    // With no debt left, cash covers every claim, so a revert here is a solvency bug.
+    function _fullExit() internal {
+        for (uint256 i; i < holders.length; ++i) {
+            for (uint256 j; j < assets.length; ++j) {
+                address holder = holders[i];
+                address asset  = assets[j];
+
+                if (IERC20Like(pool.getReserveData(asset).aTokenAddress).balanceOf(holder) == 0) continue;
+
+                vm.prank(holder);
+                pool.withdraw(asset, type(uint256).max, holder);
+            }
         }
     }
 
