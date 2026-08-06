@@ -5,12 +5,18 @@ import { Test } from "../../../lib/forge-std/src/Test.sol";
 
 import { IPool } from "../../../lib/sparklend-v1-core/contracts/interfaces/IPool.sol";
 
+import { DataTypes } from "../../../lib/sparklend-v1-core/contracts/protocol/libraries/types/DataTypes.sol";
+
+import { UserConfiguration } from "../../../lib/sparklend-v1-core/contracts/protocol/libraries/configuration/UserConfiguration.sol";
+
 import { MockReceiverBasic }       from "../../mocks/MockReceiver.sol";
 import { MockReceiverSimpleBasic } from "../../mocks/MockReceiverSimple.sol";
 
 interface IAaveOracleLike {
 
     function getAssetPrice(address asset) external view returns (uint256);
+
+    function getSourceOfAsset(address asset) external view returns (address);
 
 }
 
@@ -23,6 +29,14 @@ interface IERC20Like {
     function balanceOf(address) external view returns (uint256);
 
     function decimals() external view returns (uint256);
+
+}
+
+interface IMockOracleLike {
+
+    function __setPrice(int256 price) external;
+
+    function latestAnswer() external view returns (int256);
 
 }
 
@@ -253,6 +267,22 @@ contract PoolHandler is Test {
         pool.flashLoanSimple(flashLoanSimpleReceiver, asset, amount, new bytes(0), 0);
     }
 
+    function setPrice(uint256 assetSeed, int256 price) external {
+        address asset      = _getAsset(assetSeed);
+        address aaveOracle = pool.ADDRESSES_PROVIDER().getPriceOracle();
+        address source     = IAaveOracleLike(aaveOracle).getSourceOfAsset(asset);
+
+        vm.assume(source != address(0));
+
+        int256 currentPrice = IMockOracleLike(source).latestAnswer();
+        int256 min          = (currentPrice * 9) / 10;
+        int256 max          = (currentPrice * 11) / 10;
+
+        price = _bound(price, min < 0.7e8 ? int256(0.7e8) : min, max > 1.3e8 ? int256(1.3e8) : max);
+
+        IMockOracleLike(source).__setPrice(price);
+    }
+
     /**********************************************************************************************/
     /*** Helpers                                                                                ***/
     /**********************************************************************************************/
@@ -364,11 +394,11 @@ contract PoolHandler is Test {
         uint256 assetIndex = pool.getReserveData(asset).id;
 
         // 2. Fetch the user's global configuration bitmap
-        uint256 userConfig = pool.getUserConfiguration(user).data;
+        DataTypes.UserConfigurationMap memory userConfig = pool.getUserConfiguration(user);
 
         // 3. Check specific bit offsets for this asset index
-        isCollateral = (userConfig >> ((assetIndex << 1) + 1)) & 1 == 1;
-        isBorrowing  = (userConfig >> (assetIndex << 1)) & 1 == 1;
+        isCollateral = UserConfiguration.isUsingAsCollateral(userConfig, assetIndex);
+        isBorrowing  = UserConfiguration.isBorrowing(userConfig, assetIndex);
     }
 
     function _getTopPositions(address user) internal view returns (address highestCollateralAsset, address highestDebtAsset) {

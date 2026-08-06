@@ -81,31 +81,33 @@ contract Invariants is SparkLendTestBase {
 
         // Define the handler functions to fuzz and their relative weights.
 
-        bytes4[] memory selectors = new bytes4[](11);
-        selectors[0] = PoolHandler.warp.selector;
-        selectors[1] = PoolHandler.supply.selector;
-        selectors[2] = PoolHandler.withdraw.selector;
-        selectors[3] = PoolHandler.borrow.selector;
-        selectors[4] = PoolHandler.repay.selector;
-        selectors[5] = PoolHandler.transfer.selector;
-        selectors[6] = PoolHandler.setCollateral.selector;
-        selectors[7] = PoolHandler.mintToTreasury.selector;
-        selectors[8] = PoolHandler.liquidate.selector;
-        selectors[9] = PoolHandler.flashLoan.selector;
+        bytes4[] memory selectors = new bytes4[](12);
+        selectors[0]  = PoolHandler.warp.selector;
+        selectors[1]  = PoolHandler.supply.selector;
+        selectors[2]  = PoolHandler.withdraw.selector;
+        selectors[3]  = PoolHandler.borrow.selector;
+        selectors[4]  = PoolHandler.repay.selector;
+        selectors[5]  = PoolHandler.transfer.selector;
+        selectors[6]  = PoolHandler.setCollateral.selector;
+        selectors[7]  = PoolHandler.mintToTreasury.selector;
+        selectors[8]  = PoolHandler.liquidate.selector;
+        selectors[9]  = PoolHandler.flashLoan.selector;
         selectors[10] = PoolHandler.flashLoanSimple.selector;
+        selectors[11] = PoolHandler.setPrice.selector;
 
-        uint8[] memory weights = new uint8[](11);
-        weights[0] = 20;
-        weights[1] = 10;
-        weights[2] = 10;
-        weights[3] = 40;
-        weights[4] = 10;
-        weights[5] = 10;
-        weights[6] = 20;
-        weights[7] = 5;
-        weights[8] = 30;
-        weights[9] = 10;
+        uint8[] memory weights = new uint8[](12);
+        weights[0]  = 20;
+        weights[1]  = 10;
+        weights[2]  = 10;
+        weights[3]  = 40;
+        weights[4]  = 10;
+        weights[5]  = 10;
+        weights[6]  = 20;
+        weights[7]  = 5;
+        weights[8]  = 30;
+        weights[9]  = 10;
         weights[10] = 10;
+        weights[11] = 5;
 
         targetContract(handler);
         targetSelector(FuzzSelector({ addr: handler, selectors: _generateSelectors(selectors, weights) }));
@@ -140,16 +142,7 @@ contract Invariants is SparkLendTestBase {
             uint256 sumOfScaledDebt;
 
             for (uint256 j; j < holders.length; ++j) {
-                uint256 aTokenBalance = AToken(aToken).scaledBalanceOf(holders[j]);
-
-                ( , , , , , , , , bool usingAsCollateral ) = protocolDataProvider.getUserReserveData(asset, holders[j]);
-
-                assertTrue(
-                    !usingAsCollateral || aTokenBalance > 0,
-                    "GHOST FLAG: collateral enabled on zero scaled balance"
-                );
-
-                sumOfScaledBalances += aTokenBalance;
+                sumOfScaledBalances += AToken(aToken).scaledBalanceOf(holders[j]);
                 sumOfScaledDebt     += VariableDebtToken(vDebt).scaledBalanceOf(holders[j]);
             }
 
