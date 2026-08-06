@@ -77,7 +77,7 @@ contract PoolHandler is Test {
     /**********************************************************************************************/
 
     function warp(uint256 timeSeed) public {
-        uint256 jump = _bound(timeSeed, 1 hours, 180 days);
+        uint256 jump = _bound(timeSeed, 1 seconds, 10 days);
         vm.warp(vm.getBlockTimestamp() + jump);
     }
 
@@ -89,35 +89,53 @@ contract PoolHandler is Test {
 
         deal(asset, actor, IERC20Like(asset).balanceOf(actor) + amount);
 
+        IERC20Like aToken = IERC20Like(_getAToken(asset));
+
+        uint256 aTokenStartingBalance = aToken.balanceOf(actor);
+        uint256 assetStartingBalance  = IERC20Like(asset).balanceOf(actor);
+
         vm.startPrank(actor);
         IERC20Like(asset).approve(address(pool), amount);
         pool.supply(asset, amount, actor, 0);
         vm.stopPrank();
+
+        assertEq(IERC20Like(asset).balanceOf(actor), assetStartingBalance - amount);
+
+        // Resulting position value always rounds against the user
+        // Assuming liquidityIndex doesn't get above 5e27
+        assertTrue((aTokenStartingBalance + amount) - aToken.balanceOf(actor) <= 5);
     }
 
     function withdraw(uint256 actorSeed, uint256 assetSeed, uint256 amount) external {
         address actor = _getActor(actorSeed);
         address asset = _getAsset(assetSeed);
 
-        uint256 balance         = IERC20Like(_getAToken(asset)).balanceOf(actor);
-        uint256 maxWithdrawable = _getMaxWithdrawable(actor, asset);
+        uint256 aTokenStartingBalance = IERC20Like(_getAToken(asset)).balanceOf(actor);
+        uint256 maxWithdrawable       = _getMaxWithdrawable(actor, asset);
 
         vm.assume(maxWithdrawable >= MIN_AMOUNT);
 
         // ~10% chance of max withdraw if entire balance is withdrawable.
-        if (maxWithdrawable >= balance) {
+        if (maxWithdrawable == aTokenStartingBalance) {
             amount = _bound(amount, MIN_AMOUNT, (maxWithdrawable * 11) / 10);
         } else {
             amount = _bound(amount, MIN_AMOUNT, maxWithdrawable);
         }
 
-        if (amount > balance) {
+        uint256 assetStartingBalance = IERC20Like(asset).balanceOf(actor);
+
+        if (amount > aTokenStartingBalance) {
             vm.prank(actor);
-            pool.withdraw(asset, type(uint256).max, actor);
+            amount = pool.withdraw(asset, type(uint256).max, actor);
         } else {
             vm.prank(actor);
             pool.withdraw(asset, amount, actor);
         }
+
+        assertEq(IERC20Like(asset).balanceOf(actor), assetStartingBalance + amount);
+
+        // Always burning more aToken than the amount withdrawn, rounding against the user
+        assertTrue((aTokenStartingBalance - IERC20Like(_getAToken(asset)).balanceOf(actor)) - amount <= 5);
     }
 
     function borrow(uint256 actorSeed, uint256 assetSeed, uint256 amount) external {
@@ -302,20 +320,16 @@ contract PoolHandler is Test {
         uint256 absoluteMaxBalance = IERC20Like(_getAToken(asset)).balanceOf(actor);
 
         // 2. Fetch overall account data
-        ( uint256 totalCollateralBase, uint256 totalDebtBase, , uint256 currentLiquidityThreshold, , ) = pool.getUserAccountData(actor);
+        ( uint256 totalCollateralBase, uint256 totalDebtBase, , uint256 currentLiquidationThreshold, , ) = pool.getUserAccountData(actor);
 
         // If actor has no debt, they can withdraw their entire balance
         if (totalDebtBase == 0) return absoluteMaxBalance;
 
-        // A liquidation can seize every last unit of collateral while leaving debt behind, which
-        // zeroes the average threshold. Nothing is safely withdrawable in that state.
-        if (currentLiquidityThreshold == 0) return 0;
-
         // 3. Calculate minimum collateral required in Base Currency to keep Health Factor at 1.0
-        // currentLiquidityThreshold is formatted in 4 decimals (e.g., 8500 = 85%), so we multiply by 10000
-        uint256 minCollateralRequiredBase = (totalDebtBase * 10_000) / currentLiquidityThreshold;
+        // currentLiquidationThreshold is formatted in 4 decimals (e.g., 8500 = 85%), so we multiply by 10000
+        uint256 minCollateralRequiredBase = (totalDebtBase * 10_000) / currentLiquidationThreshold;
 
-        // If current collateral is somehow already under or at the limit, nothing is withdrawable safely
+        // If user is already under the liquidation threshold, they can't withdraw anything safely
         if (totalCollateralBase <= minCollateralRequiredBase) return 0;
 
         // 4. Excess collateral value that can be safely removed (denominated in 8-decimal Base Currency)
