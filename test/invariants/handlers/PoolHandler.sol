@@ -150,8 +150,22 @@ contract PoolHandler is Test {
 
         amount = _bound(amount, MIN_AMOUNT, maxBorrowable - 10e18);
 
+        address debtToken = _getVariableDebtToken(asset);
+
+        uint256 assetStartingBalance = IERC20Like(asset).balanceOf(actor);
+        uint256 debtStartingBalance  = IERC20Like(debtToken).balanceOf(actor);
+
         vm.prank(actor);
         pool.borrow(asset, amount, 2, 0, actor);
+
+        assertEq(IERC20Like(asset).balanceOf(actor), assetStartingBalance + amount);
+
+        // Always borrowing more debt than the amount borrowed, rounding against the user
+        assertTrue(IERC20Like(debtToken).balanceOf(actor) - (debtStartingBalance + amount) <= 5);
+
+        ( ,,,,, uint256 healthFactor ) = pool.getUserAccountData(actor);
+
+        assertGe(healthFactor, 1e18);
     }
 
     function repay(uint256 actorSeed, uint256 assetSeed, uint256 amount) external {
