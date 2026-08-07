@@ -181,6 +181,11 @@ contract PoolHandler is Test {
 
         deal(asset, actor, IERC20Like(asset).balanceOf(actor) + amount);
 
+        uint256 actualRepaid         = amount > debt ? debt : amount;
+        uint256 assetStartingBalance = IERC20Like(asset).balanceOf(actor);
+
+        ( ,,,,, uint256 healthFactorBefore ) = pool.getUserAccountData(actor);
+
         vm.startPrank(actor);
 
         IERC20Like(asset).approve(address(pool), amount);
@@ -192,6 +197,14 @@ contract PoolHandler is Test {
         }
 
         vm.stopPrank();
+
+        ( ,,,,, uint256 healthFactorAfter ) = pool.getUserAccountData(actor);
+
+        assertGe(healthFactorAfter, healthFactorBefore);
+
+        assertEq(IERC20Like(asset).balanceOf(actor), assetStartingBalance - actualRepaid);
+
+        assertApproxEqAbs(IERC20Like(_getVariableDebtToken(asset)).balanceOf(actor), debt - actualRepaid, 1);
     }
 
     function transfer(uint256 fromSeed, uint256 toSeed, uint256 assetSeed, uint256 amount) external {
