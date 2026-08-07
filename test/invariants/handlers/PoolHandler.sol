@@ -28,6 +28,10 @@ interface IERC20Like {
 
     function transfer(address, uint256) external;
 
+    function transferFrom(address, address, uint256) external;
+
+    function allowance(address, address) external view returns (uint256);
+
     function balanceOf(address) external view returns (uint256);
 
     function decimals() external view returns (uint256);
@@ -124,6 +128,11 @@ contract PoolHandler is Test {
         uint256 aTokenStartingBalance = IERC20Like(_getAToken(asset)).balanceOf(actor);
         uint256 maxWithdrawable       = _getMaxWithdrawable(actor, asset);
 
+        // Cap at reserve cash so the underlying transfer can't revert.
+        uint256 cash = IERC20Like(asset).balanceOf(_getAToken(asset));
+
+        if (maxWithdrawable > cash) maxWithdrawable = cash;
+
         vm.assume(maxWithdrawable >= MIN_AMOUNT);
 
         // ~10% chance of max withdraw if entire balance is withdrawable.
@@ -160,10 +169,16 @@ contract PoolHandler is Test {
         ( , , uint256 availableBorrowsBase, , , ) = pool.getUserAccountData(actor);
 
         uint256 maxBorrowable = (availableBorrowsBase * 1e18) / _getAssetPrice(asset);
+        uint256 cash          = IERC20Like(asset).balanceOf(_getAToken(asset));
 
-        vm.assume(maxBorrowable >= 100e18);
+        // Cap at reserve cash so the underlying transfer can't revert.
+        if (maxBorrowable > cash) maxBorrowable = cash;
 
-        amount = _bound(amount, MIN_AMOUNT, maxBorrowable - 10e18);
+        vm.assume(maxBorrowable >= 1e18);
+
+        // Leave a few base currency units of headroom: percentDiv in validateBorrow is not an
+        // exact inverse of percentMul in calculateAvailableBorrows, so the exact max can revert.
+        amount = _bound(amount, MIN_AMOUNT, maxBorrowable - 0.0000001e18);
 
         address debtToken = _getVariableDebtToken(asset);
 
@@ -282,6 +297,49 @@ contract PoolHandler is Test {
         assertEq(transferredScaledBalance, receivedScaledBalance);
     }
 
+    function transferFrom(uint256 fromSeed, uint256 toSeed, uint256 assetSeed, uint256 amount) external {
+        address from  = _getActor(fromSeed);
+        address to    = _getActor(toSeed);
+        address asset = _getAsset(assetSeed);
+
+        uint256 maxTransferable = _getMaxWithdrawable(from, asset);
+
+        vm.assume(from != to);
+        vm.assume(maxTransferable >= MIN_AMOUNT);
+
+        amount = _bound(amount, MIN_AMOUNT, maxTransferable);
+
+        // Alternate between an exact approval (exercises the allowance consumption cap) and a
+        // loose one (exercises consumption == actual balance decrease).
+        uint256 allowance = amount % 2 == 0 ? amount : amount * 2;
+
+        IERC20Like aToken = IERC20Like(_getAToken(asset));
+
+        vm.prank(from);
+        aToken.approve(to, allowance);
+
+        uint256 startingBalanceFrom = aToken.balanceOf(from);
+
+        vm.prank(to);
+        aToken.transferFrom(from, to, amount);
+
+        uint256 balanceDecrease = startingBalanceFrom - aToken.balanceOf(from);
+
+        // Sender's balance decrease rounds against them, up to index / 1e27
+        // Assuming liquidityIndex doesn't get above 5e27
+        assertGe(balanceDecrease, amount,     "balanceDecrease < amount");
+        assertLe(balanceDecrease, amount + 5, "balanceDecrease > amount + 5");
+
+        // Allowance is consumed by the sender's actual balance decrease, capped at the approval.
+        uint256 expectedConsumption = balanceDecrease > allowance ? allowance : balanceDecrease;
+
+        assertEq(
+            allowance - aToken.allowance(from, to),
+            expectedConsumption,
+            "allowance consumed != balance decrease"
+        );
+    }
+
     function setCollateral(uint256 actorSeed, uint256 assetSeed, bool enable) external {
         address actor = _getActor(actorSeed);
         address asset = _getAsset(assetSeed);
@@ -313,7 +371,6 @@ contract PoolHandler is Test {
 
         vm.assume(collateralAsset != address(0));
         vm.assume(debtAsset       != address(0));
-        vm.assume(collateralAsset != debtAsset);
 
         address liquidator = _getActor(liquidatorSeed);
 
@@ -413,7 +470,10 @@ contract PoolHandler is Test {
 
         // 3. Calculate minimum collateral required in Base Currency to keep Health Factor at 1.0
         // currentLiquidationThreshold is formatted in 4 decimals (e.g., 8500 = 85%), so we multiply by 10000
-        uint256 minCollateralRequiredBase = (totalDebtBase * 10_000) / currentLiquidationThreshold;
+        // Round up and add two base units of margin: the HF check values debt with rayMulCeil and
+        // collateral with rayMulFloor, so rounding down here can overshoot the HF = 1.0 boundary.
+        uint256 minCollateralRequiredBase =
+            (totalDebtBase * 10_000 + currentLiquidationThreshold - 1) / currentLiquidationThreshold + 2;
 
         // If user is already under the liquidation threshold, they can't withdraw anything safely
         if (totalCollateralBase <= minCollateralRequiredBase) return 0;

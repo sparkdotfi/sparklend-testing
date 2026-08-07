@@ -52,6 +52,10 @@ contract Invariants is SparkLendTestBase {
         poolConfigurator.setReserveBorrowing(address(borrowAsset),        true);
         poolConfigurator.setReserveFlashLoaning(address(collateralAsset), true);
         poolConfigurator.setReserveFlashLoaning(address(borrowAsset),     true);
+
+        // Nonzero fee so liquidations exercise the treasury fee transfer and its scaling.
+        poolConfigurator.setLiquidationProtocolFee(address(collateralAsset), 10_00);
+        poolConfigurator.setLiquidationProtocolFee(address(borrowAsset),     10_00);
         vm.stopPrank();
 
         assets.push(address(collateralAsset));
@@ -81,33 +85,35 @@ contract Invariants is SparkLendTestBase {
 
         // Define the handler functions to fuzz and their relative weights.
 
-        bytes4[] memory selectors = new bytes4[](12);
+        bytes4[] memory selectors = new bytes4[](13);
         selectors[0]  = PoolHandler.warp.selector;
         selectors[1]  = PoolHandler.supply.selector;
         selectors[2]  = PoolHandler.withdraw.selector;
         selectors[3]  = PoolHandler.borrow.selector;
         selectors[4]  = PoolHandler.repay.selector;
         selectors[5]  = PoolHandler.transfer.selector;
-        selectors[6]  = PoolHandler.setCollateral.selector;
-        selectors[7]  = PoolHandler.mintToTreasury.selector;
-        selectors[8]  = PoolHandler.liquidate.selector;
-        selectors[9]  = PoolHandler.flashLoan.selector;
-        selectors[10] = PoolHandler.flashLoanSimple.selector;
-        selectors[11] = PoolHandler.setPrice.selector;
+        selectors[6]  = PoolHandler.transferFrom.selector;
+        selectors[7]  = PoolHandler.setCollateral.selector;
+        selectors[8]  = PoolHandler.mintToTreasury.selector;
+        selectors[9]  = PoolHandler.liquidate.selector;
+        selectors[10] = PoolHandler.flashLoan.selector;
+        selectors[11] = PoolHandler.flashLoanSimple.selector;
+        selectors[12] = PoolHandler.setPrice.selector;
 
-        uint8[] memory weights = new uint8[](12);
+        uint8[] memory weights = new uint8[](13);
         weights[0]  = 20;
         weights[1]  = 10;
         weights[2]  = 10;
         weights[3]  = 40;
         weights[4]  = 10;
         weights[5]  = 10;
-        weights[6]  = 20;
-        weights[7]  = 5;
-        weights[8]  = 30;
-        weights[9]  = 10;
+        weights[6]  = 10;
+        weights[7]  = 20;
+        weights[8]  = 5;
+        weights[9]  = 30;
         weights[10] = 10;
-        weights[11] = 5;
+        weights[11] = 10;
+        weights[12] = 5;
 
         targetContract(handler);
         targetSelector(FuzzSelector({ addr: handler, selectors: _generateSelectors(selectors, weights) }));
@@ -213,6 +219,10 @@ contract Invariants is SparkLendTestBase {
 
             assertGe(data.liquidityIndex,      lastLiquidityIndex[asset],      "liquidity index decreased");
             assertGe(data.variableBorrowIndex, lastVariableBorrowIndex[asset], "borrow index decreased");
+
+            // The +/- 5 wei rounding tolerances in the handler assume indices stay below 5e27.
+            assertLe(data.liquidityIndex,      5e27, "liquidity index above tolerance assumption");
+            assertLe(data.variableBorrowIndex, 5e27, "borrow index above tolerance assumption");
 
             lastLiquidityIndex[asset]      = data.liquidityIndex;
             lastVariableBorrowIndex[asset] = data.variableBorrowIndex;
