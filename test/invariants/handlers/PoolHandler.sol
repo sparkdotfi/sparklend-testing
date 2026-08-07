@@ -204,7 +204,8 @@ contract PoolHandler is Test {
 
         assertEq(IERC20Like(asset).balanceOf(actor), assetStartingBalance - actualRepaid);
 
-        assertApproxEqAbs(IERC20Like(_getVariableDebtToken(asset)).balanceOf(actor), debt - actualRepaid, 1);
+        // Debt reduced within index rounding, either direction (same 5 wei bound as supply, index <= 5e27)
+        assertApproxEqAbs(IERC20Like(_getVariableDebtToken(asset)).balanceOf(actor), debt - actualRepaid, 5);
     }
 
     function transfer(uint256 fromSeed, uint256 toSeed, uint256 assetSeed, uint256 amount) external {
