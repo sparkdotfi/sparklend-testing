@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.0;
 
+import { console } from "forge-std/console.sol";
+
 import { Test } from "../../../lib/forge-std/src/Test.sol";
 
 import { IPool } from "../../../lib/sparklend-v1-core/contracts/interfaces/IPool.sol";
@@ -37,6 +39,12 @@ interface IMockOracleLike {
     function __setPrice(int256 price) external;
 
     function latestAnswer() external view returns (int256);
+
+}
+
+interface IScaledTokenLike is IERC20Like {
+
+    function scaledBalanceOf(address) external view returns (uint256);
 
 }
 
@@ -101,9 +109,12 @@ contract PoolHandler is Test {
 
         assertEq(IERC20Like(asset).balanceOf(actor), assetStartingBalance - amount);
 
-        // Resulting position value always rounds against the user
+        uint256 mintedATokens = aToken.balanceOf(actor) - aTokenStartingBalance;
+
+        // Minted aTokens always round against the user, up to index / 1e27
         // Assuming liquidityIndex doesn't get above 5e27
-        assertTrue((aTokenStartingBalance + amount) - aToken.balanceOf(actor) <= 5);
+        assertLe(mintedATokens, amount,     "mintedATokens > amount");
+        assertGe(mintedATokens, amount - 5, "mintedATokens < amount - 5");
     }
 
     function withdraw(uint256 actorSeed, uint256 assetSeed, uint256 amount) external {
@@ -134,8 +145,12 @@ contract PoolHandler is Test {
 
         assertEq(IERC20Like(asset).balanceOf(actor), assetStartingBalance + amount);
 
-        // Always burning more aToken than the amount withdrawn, rounding against the user
-        assertTrue((aTokenStartingBalance - IERC20Like(_getAToken(asset)).balanceOf(actor)) - amount <= 5);
+        uint256 burnedATokens = aTokenStartingBalance - IERC20Like(_getAToken(asset)).balanceOf(actor);
+
+        // Burned aTokens always round against the user, up to index / 1e27
+        // Assuming liquidityIndex doesn't get above 5e27
+        assertGe(burnedATokens, amount,     "burnedATokens < amount");
+        assertLe(burnedATokens, amount + 5, "burnedATokens > amount + 5");
     }
 
     function borrow(uint256 actorSeed, uint256 assetSeed, uint256 amount) external {
@@ -160,8 +175,12 @@ contract PoolHandler is Test {
 
         assertEq(IERC20Like(asset).balanceOf(actor), assetStartingBalance + amount);
 
-        // Always borrowing more debt than the amount borrowed, rounding against the user
-        assertTrue(IERC20Like(debtToken).balanceOf(actor) - (debtStartingBalance + amount) <= 5);
+        uint256 mintedDebtTokens = IERC20Like(debtToken).balanceOf(actor) - debtStartingBalance;
+
+        // Minted debt tokens always round against the user, up to index / 1e27
+        // Assuming variableBorrowIndex doesn't get above 5e27
+        assertGe(mintedDebtTokens, amount,     "mintedDebtTokens < amount");
+        assertLe(mintedDebtTokens, amount + 5, "mintedDebtTokens > amount + 5");
 
         ( ,,,,, uint256 healthFactor ) = pool.getUserAccountData(actor);
 
@@ -204,6 +223,13 @@ contract PoolHandler is Test {
 
         assertEq(IERC20Like(asset).balanceOf(actor), assetStartingBalance - actualRepaid);
 
+        uint256 burnedDebtTokens = debt - IERC20Like(_getVariableDebtToken(asset)).balanceOf(actor);
+
+        // Burned debt tokens always round against the user, up to index / 1e27
+        // Assuming variableBorrowIndex doesn't get above 5e27
+        assertLe(burnedDebtTokens, actualRepaid,     "burnedDebtTokens > actualRepaid");
+        assertGe(burnedDebtTokens, actualRepaid - 5, "burnedDebtTokens < actualRepaid - 5");
+
         // Debt reduced within index rounding, either direction (same 5 wei bound as supply, index <= 5e27)
         assertApproxEqAbs(IERC20Like(_getVariableDebtToken(asset)).balanceOf(actor), debt - actualRepaid, 5);
     }
@@ -215,13 +241,45 @@ contract PoolHandler is Test {
 
         uint256 maxTransferable = _getMaxWithdrawable(from, asset);
 
+        IScaledTokenLike aToken = IScaledTokenLike(_getAToken(asset));
+
+        uint256 startingATokenBalanceFrom = aToken.balanceOf(from);
+        uint256 startingATokenBalanceTo   = aToken.balanceOf(to);
+
+        uint256 startingScaledBalanceFrom = aToken.scaledBalanceOf(from);
+        uint256 startingScaledBalanceTo   = aToken.scaledBalanceOf(to);
+
         vm.assume(maxTransferable >= MIN_AMOUNT);
 
         amount = _bound(amount, MIN_AMOUNT, maxTransferable);
 
-        vm.startPrank(from);
-        IERC20Like(_getAToken(asset)).transfer(to, amount);
-        vm.stopPrank();
+        vm.prank(from);
+        aToken.transfer(to, amount);
+
+        uint256 transferredATokens       = startingATokenBalanceFrom - aToken.balanceOf(from);
+        uint256 transferredScaledBalance = startingScaledBalanceFrom - aToken.scaledBalanceOf(from);
+
+        uint256 receivedATokens       = aToken.balanceOf(to) - startingATokenBalanceTo;
+        uint256 receivedScaledBalance = aToken.scaledBalanceOf(to) - startingScaledBalanceTo;
+
+        // If the sender and recipient are the same, the deltas should all be zero
+        if (from == to) {
+            assertEq(transferredATokens,       0);
+            assertEq(transferredScaledBalance, 0);
+            assertEq(receivedATokens,          0);
+            assertEq(receivedScaledBalance,    0);
+            return;
+        }
+
+        // Scaled balance reduced from sender rounds up
+        assertGe(transferredATokens, amount,     "transferredATokens < amount");
+        assertLe(transferredATokens, amount + 5, "transferredATokens > amount + 5");
+
+        // Difference in rebased amounts can be at most one unit because of floor rounding on balanceOf
+        assertApproxEqAbs(receivedATokens, transferredATokens, 1, "receivedATokens > transferredATokens");
+
+        // Scaled balance transfer is always exact
+        assertEq(transferredScaledBalance, receivedScaledBalance);
     }
 
     function setCollateral(uint256 actorSeed, uint256 assetSeed, bool enable) external {
