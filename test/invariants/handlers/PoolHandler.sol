@@ -208,10 +208,10 @@ contract PoolHandler is Test {
 
         uint256 debt = IERC20Like(_getVariableDebtToken(asset)).balanceOf(actor);
 
-        vm.assume(debt >= MIN_AMOUNT);
+        vm.assume(debt >= 5);  // Avoids burn amount going to zero if index is less than 5e27.
 
         // ~10% chance of max repay if entire debt is repayable.
-        amount = _bound(amount, MIN_AMOUNT, (debt * 11) / 10);
+        amount = _bound(amount, 5, (debt * 11) / 10);
 
         deal(asset, actor, IERC20Like(asset).balanceOf(actor) + amount);
 

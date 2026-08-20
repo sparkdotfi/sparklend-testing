@@ -3,11 +3,18 @@ pragma solidity ^0.8.0;
 
 import { Test } from "../../lib/forge-std/src/Test.sol";
 
+import { IReserveInterestRateStrategy } from "../../lib/sparklend-v1-core/contracts/interfaces/IReserveInterestRateStrategy.sol";
+
+import { VariableBorrowInterestRateStrategy } from "../../lib/sparklend-advanced/src/VariableBorrowInterestRateStrategy.sol";
+
 import { DataTypes } from "../../lib/sparklend-v1-core/contracts/protocol/libraries/types/DataTypes.sol";
 
 import { AToken }            from "../../lib/sparklend-v1-core/contracts/protocol/tokenization/AToken.sol";
 import { VariableDebtToken } from "../../lib/sparklend-v1-core/contracts/protocol/tokenization/VariableDebtToken.sol";
 import { WadRayMath }        from "../../lib/sparklend-v1-core/contracts/protocol/libraries/math/WadRayMath.sol";
+
+import { IERC20 }    from "../../lib/erc20-helpers/src/interfaces/IERC20.sol";
+import { MockERC20 } from "../../lib/erc20-helpers/src/MockERC20.sol";
 
 import { SparkLendTestBase } from "../SparkLendTestBase.sol";
 
@@ -396,10 +403,6 @@ contract InvariantsHighBorrowVolumeVolatile is InvariantsTestBase {
         _populateHolders();
 
         // Seed deep liquidity and open a real borrow so indices move over time.
-        _supplyAndUseAsCollateral(bootstrap, address(collateralAsset), MIN_AMOUNT);
-        _supplyAndUseAsCollateral(bootstrap, address(borrowAsset),     MIN_AMOUNT);
-
-        // Seed deep liquidity and open a real borrow so indices move over time.
         _supplyAndUseAsCollateral(bootstrap, address(collateralAsset), 5_000_000e18);
         _supplyAndUseAsCollateral(bootstrap, address(borrowAsset),     5_000_000e18);
 
@@ -419,24 +422,135 @@ contract InvariantsHighBorrowVolumeVolatile is InvariantsTestBase {
         // Define the handler functions to fuzz and their relative weights.
 
         bytes4[] memory selectors = new bytes4[](9);
-        selectors[0]  = PoolHandler.warp.selector;
-        selectors[1]  = PoolHandler.supply.selector;
-        selectors[2]  = PoolHandler.withdraw.selector;
-        selectors[3]  = PoolHandler.borrow.selector;
-        selectors[4]  = PoolHandler.repay.selector;
-        selectors[5]  = PoolHandler.mintToTreasury.selector;
-        selectors[6]  = PoolHandler.liquidate.selector;
+        selectors[0] = PoolHandler.warp.selector;
+        selectors[1] = PoolHandler.supply.selector;
+        selectors[2] = PoolHandler.withdraw.selector;
+        selectors[3] = PoolHandler.borrow.selector;
+        selectors[4] = PoolHandler.repay.selector;
+        selectors[5] = PoolHandler.mintToTreasury.selector;
+        selectors[6] = PoolHandler.liquidate.selector;
         selectors[7] = PoolHandler.setPrice.selector;
 
         uint8[] memory weights = new uint8[](13);
-        weights[0]  = 20;
-        weights[1]  = 20;
-        weights[2]  = 20;
-        weights[3]  = 20;
-        weights[4]  = 20;
-        weights[5]  = 20;
-        weights[6]  = 20;
-        weights[7]  = 50;
+        weights[0] = 20;
+        weights[1] = 20;
+        weights[2] = 20;
+        weights[3] = 20;
+        weights[4] = 20;
+        weights[5] = 20;
+        weights[6] = 20;
+        weights[7] = 50;
+
+        targetContract(handler);
+        targetSelector(FuzzSelector({ addr: handler, selectors: _generateSelectors(selectors, weights) }));
+    }
+
+}
+
+contract InvariantsHighBorrowVolumeVolatileMultipleCollaterals is InvariantsTestBase {
+
+    function setUp() public virtual override {
+        super.setUp();
+
+        IReserveInterestRateStrategy strategy2
+            = IReserveInterestRateStrategy(new VariableBorrowInterestRateStrategy({
+                provider:               poolAddressesProvider,
+                optimalUsageRatio:      0.95e27,
+                baseVariableBorrowRate: 0.05e27,
+                variableRateSlope1:     0.05e27,
+                variableRateSlope2:     0.80e27
+            }));
+
+        MockERC20 collateralAsset2 = new MockERC20("Collateral Asset 2", "COLL2", 18);
+        MockERC20 collateralAsset3 = new MockERC20("Collateral Asset 3", "COLL3", 18);
+        MockERC20 borrowAsset2     = new MockERC20("Borrow Asset 2",     "BRRW2", 18);
+
+        _initReserve(IERC20(address(collateralAsset2)), strategy2);
+        _initReserve(IERC20(address(collateralAsset3)), strategy2);
+        _initReserve(IERC20(address(borrowAsset2)),     strategy2);
+
+        _setUpMockOracle(address(collateralAsset2), int256(1e8));
+        _setUpMockOracle(address(collateralAsset3), int256(1e8));
+        _setUpMockOracle(address(borrowAsset2),     int256(1e8));
+
+        // Both reserves usable as collateral and borrowable.
+        _initCollateral(address(collateralAsset),  70_00, 75_00, 105_00);
+        _initCollateral(address(collateralAsset2), 90_00, 95_00, 105_00);
+        _initCollateral(address(collateralAsset3), 50_00, 55_00, 105_00);
+        _initCollateral(address(borrowAsset),      70_00, 75_00, 105_00);
+        _initCollateral(address(borrowAsset2),     70_00, 75_00, 105_00);
+
+        vm.startPrank(admin);
+        poolConfigurator.setReserveBorrowing(address(borrowAsset),         true);
+        poolConfigurator.setReserveBorrowing(address(borrowAsset2),        true);
+        poolConfigurator.setReserveFlashLoaning(address(collateralAsset),  true);
+        poolConfigurator.setReserveFlashLoaning(address(collateralAsset2), true);
+        poolConfigurator.setReserveFlashLoaning(address(collateralAsset3), true);
+        poolConfigurator.setReserveFlashLoaning(address(borrowAsset),      true);
+        poolConfigurator.setReserveFlashLoaning(address(borrowAsset2),     true);
+
+        // Nonzero fee so liquidations exercise the treasury fee transfer and its scaling.
+        poolConfigurator.setLiquidationProtocolFee(address(collateralAsset),  10_00);
+        poolConfigurator.setLiquidationProtocolFee(address(collateralAsset2), 10_00);
+        poolConfigurator.setLiquidationProtocolFee(address(collateralAsset3), 10_00);
+        vm.stopPrank();
+
+        assets.push(address(collateralAsset));
+        assets.push(address(collateralAsset2));
+        assets.push(address(collateralAsset3));
+        assets.push(address(borrowAsset));
+        assets.push(address(borrowAsset2));
+
+        for (uint256 i; i < 10; ++i) {
+            actors.push(makeAddr(string(abi.encodePacked("actor", vm.toString(i)))));
+        }
+
+        _populateHolders();
+
+        // Seed deep liquidity and open a real borrow so indices move over time.
+        _supplyAndUseAsCollateral(bootstrap, address(collateralAsset),  5_000_000e18);
+        _supplyAndUseAsCollateral(bootstrap, address(collateralAsset2), 5_000_000e18);
+        _supplyAndUseAsCollateral(bootstrap, address(collateralAsset3), 5_000_000e18);
+        _supplyAndUseAsCollateral(bootstrap, address(borrowAsset),      5_000_000e18);
+        _supplyAndUseAsCollateral(bootstrap, address(borrowAsset2),     5_000_000e18);
+
+        vm.startPrank(bootstrap);
+        pool.borrow(address(borrowAsset),  500_000e18, 2, 0, bootstrap);
+        pool.borrow(address(borrowAsset2), 500_000e18, 2, 0, bootstrap);
+        vm.stopPrank();
+
+        handler = address(new PoolHandler(address(pool), actors, assets));
+
+        // Add collateral for every actor.
+        for (uint256 i; i < actors.length; ++i) {
+            _supplyAndUseAsCollateral(actors[i], address(collateralAsset), 100_000e18);
+            _supplyAndUseAsCollateral(actors[i], address(collateralAsset2), 100_000e18);
+            _supplyAndUseAsCollateral(actors[i], address(collateralAsset3), 100_000e18);
+            _supplyAndUseAsCollateral(actors[i], address(borrowAsset),      100_000e18);
+            _supplyAndUseAsCollateral(actors[i], address(borrowAsset2),     100_000e18);
+        }
+
+        // Define the handler functions to fuzz and their relative weights.
+
+        bytes4[] memory selectors = new bytes4[](9);
+        selectors[0] = PoolHandler.warp.selector;
+        selectors[1] = PoolHandler.supply.selector;
+        selectors[2] = PoolHandler.withdraw.selector;
+        selectors[3] = PoolHandler.borrow.selector;
+        selectors[4] = PoolHandler.repay.selector;
+        selectors[5] = PoolHandler.mintToTreasury.selector;
+        selectors[6] = PoolHandler.liquidate.selector;
+        selectors[7] = PoolHandler.setPrice.selector;
+
+        uint8[] memory weights = new uint8[](13);
+        weights[0] = 20;
+        weights[1] = 20;
+        weights[2] = 20;
+        weights[3] = 20;
+        weights[4] = 20;
+        weights[5] = 20;
+        weights[6] = 20;
+        weights[7] = 50;
 
         targetContract(handler);
         targetSelector(FuzzSelector({ addr: handler, selectors: _generateSelectors(selectors, weights) }));
