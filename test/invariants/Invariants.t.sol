@@ -102,18 +102,18 @@ contract Invariants is SparkLendTestBase {
 
         uint8[] memory weights = new uint8[](13);
         weights[0]  = 20;
-        weights[1]  = 10;
-        weights[2]  = 10;
-        weights[3]  = 40;
-        weights[4]  = 10;
-        weights[5]  = 10;
-        weights[6]  = 10;
-        weights[7]  = 20;
+        weights[1]  = 20;
+        weights[2]  = 20;
+        weights[3]  = 20;
+        weights[4]  = 20;
+        weights[5]  = 20;
+        weights[6]  = 20;
+        weights[7]  = 5;
         weights[8]  = 5;
-        weights[9]  = 30;
+        weights[9]  = 20;
         weights[10] = 10;
         weights[11] = 10;
-        weights[12] = 5;
+        weights[12] = 10;
 
         targetContract(handler);
         targetSelector(FuzzSelector({ addr: handler, selectors: _generateSelectors(selectors, weights) }));
@@ -121,11 +121,13 @@ contract Invariants is SparkLendTestBase {
 
     function invariant_full() external {
         for (uint256 i; i < assets.length; ++i) {
-            address asset  = assets[i];
+            address asset = assets[i];
 
-            address aToken = pool.getReserveData(asset).aTokenAddress;
-            address vDebt  = pool.getReserveData(asset).variableDebtTokenAddress;
-            address sDebt  = pool.getReserveData(asset).stableDebtTokenAddress;
+            DataTypes.ReserveData memory data = pool.getReserveData(asset);
+
+            address aToken = data.aTokenAddress;
+            address vDebt  = data.variableDebtTokenAddress;
+            address sDebt  = data.stableDebtTokenAddress;
 
             uint256 cash   = IERC20Like(asset).balanceOf(aToken);
             uint256 debt   = IERC20Like(vDebt).totalSupply() + IERC20Like(sDebt).totalSupply();
@@ -135,8 +137,7 @@ contract Invariants is SparkLendTestBase {
             // backing — the handler's mintToTreasury action converts it into aToken supply, so
             // solvency must hold with it counted either way.
             uint256 treasuryClaim =
-                uint256(pool.getReserveData(asset).accruedToTreasury)
-                .rayMul(pool.getReserveNormalizedIncome(asset));
+                uint256(data.accruedToTreasury).rayMul(pool.getReserveNormalizedIncome(asset));
 
             assertGe(
                 cash + debt,
@@ -146,24 +147,44 @@ contract Invariants is SparkLendTestBase {
 
             uint256 sumOfScaledBalances;
             uint256 sumOfScaledDebt;
+            uint256 sumOfBalances;
+            uint256 sumOfDebt;
 
             for (uint256 j; j < holders.length; ++j) {
                 sumOfScaledBalances += AToken(aToken).scaledBalanceOf(holders[j]);
                 sumOfScaledDebt     += VariableDebtToken(vDebt).scaledBalanceOf(holders[j]);
+                sumOfBalances       += AToken(aToken).balanceOf(holders[j]);
+                sumOfDebt           += VariableDebtToken(vDebt).balanceOf(holders[j]);
             }
 
-            assertEq(
-                sumOfScaledBalances,
-                AToken(aToken).scaledTotalSupply(),
-                "aToken scaled conservation broken"
-            );
+            assertEq(sumOfScaledBalances, AToken(aToken).scaledTotalSupply(),           "aToken scaled conservation broken");
+            assertEq(sumOfScaledDebt,     VariableDebtToken(vDebt).scaledTotalSupply(), "variable debt scaled conservation broken");
 
-            assertEq(
-                sumOfScaledDebt,
-                VariableDebtToken(vDebt).scaledTotalSupply(),
-                "variable debt scaled conservation broken"
-            );
+            // Rebased balances round against the user: aToken floors, variable debt ceils. So the
+            // holders' balances can never sum above the aToken supply, nor below the debt supply.
+            assertLe(sumOfBalances, claims,                          "aToken rebased balances exceed supply");
+            assertGe(sumOfDebt,     IERC20Like(vDebt).totalSupply(), "variable debt rebased balances below supply");
+
+            _assertReserveMath(data, asset);
         }
+    }
+
+    // Stateless reserve checks, run on every step of the campaign (not just the wind-down).
+    function _assertReserveMath(DataTypes.ReserveData memory data, address asset) internal view {
+        // Indices start at RAY and only ever compound upward; supply accrues slower than debt.
+        assertGe(data.liquidityIndex,      1e27,                     "liquidity index below RAY");
+        assertGe(data.variableBorrowIndex, 1e27,                     "borrow index below RAY");
+        assertLe(data.liquidityIndex,      data.variableBorrowIndex, "liquidity index above borrow index");
+
+        // The +/- 5 wei rounding tolerances in the handler assume indices stay below 5e27.
+        assertLe(data.variableBorrowIndex, 5e27, "borrow index above tolerance assumption");
+
+        // Normalized values fold in the accrual since the last index write.
+        assertGe(pool.getReserveNormalizedIncome(asset),       data.liquidityIndex,      "income below index");
+        assertGe(pool.getReserveNormalizedVariableDebt(asset), data.variableBorrowIndex, "debt below index");
+
+        // The reserve factor only ever takes a cut, so suppliers are paid no more than borrowers.
+        assertLe(data.currentLiquidityRate, data.currentVariableBorrowRate, "supply rate above borrow rate");
     }
 
     function afterInvariant() public {
@@ -210,10 +231,12 @@ contract Invariants is SparkLendTestBase {
         _assertReserveSanity();
     }
 
-    // Monotonicity is tracked across calls, so these have to run in sequence.
+    // Indices never decrease. Monotonicity is tracked across calls, so this runs in sequence.
     function _assertReserveSanity() internal {
         for (uint256 i; i < assets.length; ++i) {
             address asset = assets[i];
+
+            _assertReserveMath(pool.getReserveData(asset), asset);
 
             DataTypes.ReserveData memory data = pool.getReserveData(asset);
 
@@ -226,13 +249,6 @@ contract Invariants is SparkLendTestBase {
 
             lastLiquidityIndex[asset]      = data.liquidityIndex;
             lastVariableBorrowIndex[asset] = data.variableBorrowIndex;
-
-            // Normalized values fold in the accrual since the last index write.
-            assertGe(pool.getReserveNormalizedIncome(asset),       data.liquidityIndex,      "income below index");
-            assertGe(pool.getReserveNormalizedVariableDebt(asset), data.variableBorrowIndex, "debt below index");
-
-            // Utilization is capped at 100% and the reserve factor only ever takes a cut.
-            assertLe(data.currentLiquidityRate, data.currentVariableBorrowRate, "supply rate above borrow rate");
         }
     }
 
@@ -246,15 +262,25 @@ contract Invariants is SparkLendTestBase {
                 address holder = holders[i];
                 address asset  = assets[j];
 
+                AToken aToken = AToken(pool.getReserveData(asset).aTokenAddress);
+
                 uint256 cash = IERC20Like(asset).balanceOf(pool.getReserveData(asset).aTokenAddress);
                 uint256 max  = PoolHandler(handler).maxWithdrawable(holder, asset);
 
                 uint256 amount = max > cash ? cash : max;
 
+                uint256 userPositionBefore = aToken.balanceOf(holder) + IERC20Like(asset).balanceOf(holder);
+
                 if (amount < MIN_AMOUNT) continue;
 
                 vm.prank(holder);
                 pool.withdraw(asset, amount, holder);
+
+                uint256 userPositionAfter = aToken.balanceOf(holder) + IERC20Like(asset).balanceOf(holder);
+
+                assertApproxEqAbs(userPositionAfter, userPositionBefore, 5, "user position changed by unexpected amount");
+
+                assertLe(userPositionAfter, userPositionBefore, "position not rounded against user");
             }
         }
     }
@@ -288,10 +314,20 @@ contract Invariants is SparkLendTestBase {
                 address holder = holders[i];
                 address asset  = assets[j];
 
-                if (IERC20Like(pool.getReserveData(asset).aTokenAddress).balanceOf(holder) == 0) continue;
+                AToken aToken = AToken(pool.getReserveData(asset).aTokenAddress);
+
+                if (aToken.balanceOf(holder) == 0) continue;
+
+                uint256 userPositionBefore = aToken.balanceOf(holder) + IERC20Like(asset).balanceOf(holder);
 
                 vm.prank(holder);
                 pool.withdraw(asset, type(uint256).max, holder);
+
+                uint256 userPositionAfter = aToken.balanceOf(holder) + IERC20Like(asset).balanceOf(holder);
+
+                assertApproxEqAbs(userPositionAfter, userPositionBefore, 5, "user position changed by unexpected amount");
+
+                assertLe(userPositionAfter, userPositionBefore, "position not rounded against user");
             }
         }
     }

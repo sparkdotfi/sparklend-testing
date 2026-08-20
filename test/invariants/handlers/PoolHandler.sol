@@ -468,6 +468,10 @@ contract PoolHandler is Test {
         // If actor has no debt, they can withdraw their entire balance
         if (totalDebtBase == 0) return absoluteMaxBalance;
 
+        // An actor with debt and no collateral value left is in bad debt, so nothing is safely
+        // withdrawable. Their liquidation threshold is zero, which the division below cannot take.
+        if (currentLiquidationThreshold == 0) return 0;
+
         // 3. Calculate minimum collateral required in Base Currency to keep Health Factor at 1.0
         // currentLiquidationThreshold is formatted in 4 decimals (e.g., 8500 = 85%), so we multiply by 10000
         // Round up and add two base units of margin: the HF check values debt with rayMulCeil and
