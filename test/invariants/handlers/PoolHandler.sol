@@ -475,25 +475,31 @@ contract PoolHandler is Test {
         // 2. Fetch overall account data
         ( uint256 totalCollateralBase, uint256 totalDebtBase, , uint256 currentLiquidationThreshold, , ) = pool.getUserAccountData(actor);
 
-        // If actor has no debt, they can withdraw their entire balance
-        if (totalDebtBase == 0) return absoluteMaxBalance;
+        // 3. Cases where the health factor does not constrain the withdraw
+        if (totalDebtBase == 0) return absoluteMaxBalance;  // No debt, no HF check
 
-        // An actor with debt and no collateral value left is in bad debt, so nothing is safely
-        // withdrawable. Their liquidation threshold is zero, which the division below cannot take.
+        // Debt with a zero average LT is bad debt, so nothing is safely withdrawable
         if (currentLiquidationThreshold == 0) return 0;
 
-        // 3. Calculate minimum collateral required in Base Currency to keep Health Factor at 1.0
-        // currentLiquidationThreshold is formatted in 4 decimals (e.g., 8500 = 85%), so we multiply by 10000
-        // Round up and add two base units of margin: the HF check values debt with rayMulCeil and
-        // collateral with rayMulFloor, so rounding down here can overshoot the HF = 1.0 boundary.
-        uint256 minCollateralRequiredBase =
-            (totalDebtBase * 10_000 + currentLiquidationThreshold - 1) / currentLiquidationThreshold + 2;
+        ( bool isCollateral, ) = _getAssetStatus(actor, asset);
 
-        // If user is already under the liquidation threshold, they can't withdraw anything safely
-        if (totalCollateralBase <= minCollateralRequiredBase) return 0;
+        if (!isCollateral) return absoluteMaxBalance;  // Not counted in the HF numerator
 
-        // 4. Excess collateral value that can be safely removed (denominated in 8-decimal Base Currency)
-        uint256 maxSafeWithdrawBase = totalCollateralBase - minCollateralRequiredBase;
+        uint256 assetLT = pool.getConfiguration(asset).getLiquidationThreshold();
+
+        if (assetLT == 0) return absoluteMaxBalance;  // Contributes nothing to the HF numerator
+
+        // 4. HF >= 1 means collateral * avgLT >= debt * 10000, so work in that product space:
+        //    withdrawing w of this asset drops the product by w * assetLT, not w * avgLT. Two
+        //    buffers on the required product:
+        //    - totalCollateralBase: avgLT is recomputed with floor division after the withdraw
+        //    - 2 * 10000: HF values debt with rayMulCeil and collateral with rayMulFloor
+        uint256 currentProduct     = totalCollateralBase * currentLiquidationThreshold;
+        uint256 minProductRequired = totalDebtBase * 10_000 + totalCollateralBase + 2 * 10_000;
+
+        if (currentProduct <= minProductRequired) return 0;
+
+        uint256 maxSafeWithdrawBase = (currentProduct - minProductRequired) / assetLT;
 
         // 5. Convert Base Currency value into Asset units using the Oracle Price and Decimals
         uint256 maxSafeWithdraw = (maxSafeWithdrawBase * 1e18) / _getAssetPrice(asset);
