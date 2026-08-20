@@ -410,6 +410,12 @@ contract InvariantsHighBorrowVolumeVolatile is InvariantsTestBase {
 
         handler = address(new PoolHandler(address(pool), actors, assets));
 
+        // Add collateral for every actor.
+        for (uint256 i; i < actors.length; ++i) {
+            _supplyAndUseAsCollateral(actors[i], address(collateralAsset), 100_000e18);
+            _supplyAndUseAsCollateral(actors[i], address(borrowAsset),     100_000e18);
+        }
+
         // Define the handler functions to fuzz and their relative weights.
 
         bytes4[] memory selectors = new bytes4[](9);

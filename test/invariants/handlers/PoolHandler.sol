@@ -174,11 +174,11 @@ contract PoolHandler is Test {
         // Cap at reserve cash so the underlying transfer can't revert.
         if (maxBorrowable > cash) maxBorrowable = cash;
 
-        vm.assume(maxBorrowable >= 1e18);
+        vm.assume(maxBorrowable >= MIN_AMOUNT);
 
         // Leave a few base currency units of headroom: percentDiv in validateBorrow is not an
         // exact inverse of percentMul in calculateAvailableBorrows, so the exact max can revert.
-        amount = _bound(amount, MIN_AMOUNT, maxBorrowable - 0.0000001e18);
+        amount = _bound(amount, MIN_AMOUNT, maxBorrowable - MIN_AMOUNT);
 
         address debtToken = _getVariableDebtToken(asset);
 
@@ -443,7 +443,8 @@ contract PoolHandler is Test {
         int256 min          = (currentPrice * 9) / 10;
         int256 max          = (currentPrice * 11) / 10;
 
-        price = _bound(price, min < 0.7e8 ? int256(0.7e8) : min, max > 1.3e8 ? int256(1.3e8) : max);
+        // Max of a total of an 95% drop and a 200% increase.
+        price = _bound(price, min < 0.05e8 ? int256(0.05e8) : min, max > 3e8 ? int256(3e8) : max);
 
         IMockOracleLike(source).__setPrice(price);
     }
