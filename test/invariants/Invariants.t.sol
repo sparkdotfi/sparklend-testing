@@ -523,7 +523,7 @@ contract InvariantsHighBorrowVolumeVolatileMultipleCollaterals is InvariantsTest
 
         // Add collateral for every actor.
         for (uint256 i; i < actors.length; ++i) {
-            _supplyAndUseAsCollateral(actors[i], address(collateralAsset), 100_000e18);
+            _supplyAndUseAsCollateral(actors[i], address(collateralAsset),  100_000e18);
             _supplyAndUseAsCollateral(actors[i], address(collateralAsset2), 100_000e18);
             _supplyAndUseAsCollateral(actors[i], address(collateralAsset3), 100_000e18);
             _supplyAndUseAsCollateral(actors[i], address(borrowAsset),      100_000e18);

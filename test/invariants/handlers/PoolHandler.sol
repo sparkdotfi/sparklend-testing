@@ -9,7 +9,8 @@ import { IPool } from "../../../lib/sparklend-v1-core/contracts/interfaces/IPool
 
 import { DataTypes } from "../../../lib/sparklend-v1-core/contracts/protocol/libraries/types/DataTypes.sol";
 
-import { UserConfiguration } from "../../../lib/sparklend-v1-core/contracts/protocol/libraries/configuration/UserConfiguration.sol";
+import { UserConfiguration }    from "../../../lib/sparklend-v1-core/contracts/protocol/libraries/configuration/UserConfiguration.sol";
+import { ReserveConfiguration } from "../../../lib/sparklend-v1-core/contracts/protocol/libraries/configuration/ReserveConfiguration.sol";
 
 import { MockReceiverBasic }       from "../../mocks/MockReceiver.sol";
 import { MockReceiverSimpleBasic } from "../../mocks/MockReceiverSimple.sol";
@@ -56,6 +57,8 @@ interface IScaledTokenLike is IERC20Like {
 // halts the campaign; the invariants live in Invariants.t.sol. Actions cover the full PR blast
 // radius: supply / withdraw / borrow / repay / aToken transfer / liquidation / time warp.
 contract PoolHandler is Test {
+
+    using ReserveConfiguration for DataTypes.ReserveConfigurationMap;
 
     uint256 internal constant MIN_AMOUNT = 0.000000000001e18; // 1e6
 
@@ -165,6 +168,8 @@ contract PoolHandler is Test {
     function borrow(uint256 actorSeed, uint256 assetSeed, uint256 amount) external {
         address actor = _getActor(actorSeed);
         address asset = _getAsset(assetSeed);
+
+        vm.assume(pool.getConfiguration(asset).getBorrowingEnabled());
 
         ( , , uint256 availableBorrowsBase, , , ) = pool.getUserAccountData(actor);
 
