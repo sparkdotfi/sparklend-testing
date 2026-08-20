@@ -23,7 +23,7 @@ interface IERC20Like {
 
 }
 
-contract Invariants is SparkLendTestBase {
+abstract contract InvariantsTestBase is SparkLendTestBase {
 
     using WadRayMath for uint256;
 
@@ -39,85 +39,6 @@ contract Invariants is SparkLendTestBase {
 
     mapping(address => uint256) internal lastLiquidityIndex;
     mapping(address => uint256) internal lastVariableBorrowIndex;
-
-    function setUp() public virtual override {
-        super.setUp();
-
-        // Both reserves usable as collateral and borrowable.
-        _initCollateral(address(collateralAsset), 70_00, 75_00, 105_00);
-        _initCollateral(address(borrowAsset),     70_00, 75_00, 105_00);
-
-        vm.startPrank(admin);
-        poolConfigurator.setReserveBorrowing(address(collateralAsset),    true);
-        poolConfigurator.setReserveBorrowing(address(borrowAsset),        true);
-        poolConfigurator.setReserveFlashLoaning(address(collateralAsset), true);
-        poolConfigurator.setReserveFlashLoaning(address(borrowAsset),     true);
-
-        // Nonzero fee so liquidations exercise the treasury fee transfer and its scaling.
-        poolConfigurator.setLiquidationProtocolFee(address(collateralAsset), 10_00);
-        poolConfigurator.setLiquidationProtocolFee(address(borrowAsset),     10_00);
-        vm.stopPrank();
-
-        assets.push(address(collateralAsset));
-        assets.push(address(borrowAsset));
-
-        for (uint256 i; i < 10; ++i) {
-            actors.push(makeAddr(string(abi.encodePacked("actor", vm.toString(i)))));
-        }
-
-        _populateHolders();
-
-        // Seed deep liquidity and open a real borrow so indices move over time.
-        _supplyAndUseAsCollateral(bootstrap, address(collateralAsset), 5_000_000e18);
-        _supplyAndUseAsCollateral(bootstrap, address(borrowAsset),     5_000_000e18);
-
-        vm.startPrank(bootstrap);
-        pool.borrow(address(collateralAsset), 500_000e18, 2, 0, bootstrap);
-        pool.borrow(address(borrowAsset),     500_000e18, 2, 0, bootstrap);
-        vm.stopPrank();
-
-        // Give every actor starting collateral so borrows can succeed during the campaign.
-        for (uint256 i; i < actors.length; ++i) {
-            _supplyAndUseAsCollateral(actors[i], address(collateralAsset), 100_000e18);
-        }
-
-        handler = address(new PoolHandler(address(pool), actors, assets));
-
-        // Define the handler functions to fuzz and their relative weights.
-
-        bytes4[] memory selectors = new bytes4[](13);
-        selectors[0]  = PoolHandler.warp.selector;
-        selectors[1]  = PoolHandler.supply.selector;
-        selectors[2]  = PoolHandler.withdraw.selector;
-        selectors[3]  = PoolHandler.borrow.selector;
-        selectors[4]  = PoolHandler.repay.selector;
-        selectors[5]  = PoolHandler.transfer.selector;
-        selectors[6]  = PoolHandler.transferFrom.selector;
-        selectors[7]  = PoolHandler.setCollateral.selector;
-        selectors[8]  = PoolHandler.mintToTreasury.selector;
-        selectors[9]  = PoolHandler.liquidate.selector;
-        selectors[10] = PoolHandler.flashLoan.selector;
-        selectors[11] = PoolHandler.flashLoanSimple.selector;
-        selectors[12] = PoolHandler.setPrice.selector;
-
-        uint8[] memory weights = new uint8[](13);
-        weights[0]  = 20;
-        weights[1]  = 20;
-        weights[2]  = 20;
-        weights[3]  = 20;
-        weights[4]  = 20;
-        weights[5]  = 20;
-        weights[6]  = 20;
-        weights[7]  = 5;
-        weights[8]  = 5;
-        weights[9]  = 20;
-        weights[10] = 10;
-        weights[11] = 10;
-        weights[12] = 10;
-
-        targetContract(handler);
-        targetSelector(FuzzSelector({ addr: handler, selectors: _generateSelectors(selectors, weights) }));
-    }
 
     function invariant_full() external {
         for (uint256 i; i < assets.length; ++i) {
@@ -359,6 +280,160 @@ contract Invariants is SparkLendTestBase {
                 output[index++] = input[i];
             }
         }
+    }
+
+}
+
+contract InvariantsFullySeeded is InvariantsTestBase {
+
+    function setUp() public virtual override {
+        super.setUp();
+
+        // Both reserves usable as collateral and borrowable.
+        _initCollateral(address(collateralAsset), 70_00, 75_00, 105_00);
+        _initCollateral(address(borrowAsset),     70_00, 75_00, 105_00);
+
+        vm.startPrank(admin);
+        poolConfigurator.setReserveBorrowing(address(collateralAsset),    true);
+        poolConfigurator.setReserveBorrowing(address(borrowAsset),        true);
+        poolConfigurator.setReserveFlashLoaning(address(collateralAsset), true);
+        poolConfigurator.setReserveFlashLoaning(address(borrowAsset),     true);
+
+        // Nonzero fee so liquidations exercise the treasury fee transfer and its scaling.
+        poolConfigurator.setLiquidationProtocolFee(address(collateralAsset), 10_00);
+        poolConfigurator.setLiquidationProtocolFee(address(borrowAsset),     10_00);
+        vm.stopPrank();
+
+        assets.push(address(collateralAsset));
+        assets.push(address(borrowAsset));
+
+        for (uint256 i; i < 10; ++i) {
+            actors.push(makeAddr(string(abi.encodePacked("actor", vm.toString(i)))));
+        }
+
+        _populateHolders();
+
+        // Seed deep liquidity and open a real borrow so indices move over time.
+        _supplyAndUseAsCollateral(bootstrap, address(collateralAsset), MIN_AMOUNT);
+        _supplyAndUseAsCollateral(bootstrap, address(borrowAsset),     MIN_AMOUNT);
+
+        // Seed deep liquidity and open a real borrow so indices move over time.
+        _supplyAndUseAsCollateral(bootstrap, address(collateralAsset), 5_000_000e18);
+        _supplyAndUseAsCollateral(bootstrap, address(borrowAsset),     5_000_000e18);
+
+        vm.startPrank(bootstrap);
+        pool.borrow(address(collateralAsset), 500_000e18, 2, 0, bootstrap);
+        pool.borrow(address(borrowAsset),     500_000e18, 2, 0, bootstrap);
+        vm.stopPrank();
+
+        handler = address(new PoolHandler(address(pool), actors, assets));
+
+        // Define the handler functions to fuzz and their relative weights.
+
+        bytes4[] memory selectors = new bytes4[](13);
+        selectors[0]  = PoolHandler.warp.selector;
+        selectors[1]  = PoolHandler.supply.selector;
+        selectors[2]  = PoolHandler.withdraw.selector;
+        selectors[3]  = PoolHandler.borrow.selector;
+        selectors[4]  = PoolHandler.repay.selector;
+        selectors[5]  = PoolHandler.transfer.selector;
+        selectors[6]  = PoolHandler.transferFrom.selector;
+        selectors[7]  = PoolHandler.setCollateral.selector;
+        selectors[8]  = PoolHandler.mintToTreasury.selector;
+        selectors[9]  = PoolHandler.liquidate.selector;
+        selectors[10] = PoolHandler.flashLoan.selector;
+        selectors[11] = PoolHandler.flashLoanSimple.selector;
+        selectors[12] = PoolHandler.setPrice.selector;
+
+        uint8[] memory weights = new uint8[](13);
+        weights[0]  = 20;
+        weights[1]  = 20;
+        weights[2]  = 20;
+        weights[3]  = 20;
+        weights[4]  = 20;
+        weights[5]  = 20;
+        weights[6]  = 20;
+        weights[7]  = 5;
+        weights[8]  = 5;
+        weights[9]  = 20;
+        weights[10] = 10;
+        weights[11] = 10;
+        weights[12] = 10;
+
+        targetContract(handler);
+        targetSelector(FuzzSelector({ addr: handler, selectors: _generateSelectors(selectors, weights) }));
+    }
+
+}
+
+contract InvariantsHighBorrowVolumeVolatile is InvariantsTestBase {
+
+    function setUp() public virtual override {
+        super.setUp();
+
+        // Both reserves usable as collateral and borrowable.
+        _initCollateral(address(collateralAsset), 70_00, 75_00, 105_00);
+        _initCollateral(address(borrowAsset),     70_00, 75_00, 105_00);
+
+        vm.startPrank(admin);
+        poolConfigurator.setReserveBorrowing(address(collateralAsset),    true);
+        poolConfigurator.setReserveBorrowing(address(borrowAsset),        true);
+        poolConfigurator.setReserveFlashLoaning(address(collateralAsset), true);
+        poolConfigurator.setReserveFlashLoaning(address(borrowAsset),     true);
+
+        // Nonzero fee so liquidations exercise the treasury fee transfer and its scaling.
+        poolConfigurator.setLiquidationProtocolFee(address(collateralAsset), 10_00);
+        poolConfigurator.setLiquidationProtocolFee(address(borrowAsset),     10_00);
+        vm.stopPrank();
+
+        assets.push(address(collateralAsset));
+        assets.push(address(borrowAsset));
+
+        for (uint256 i; i < 10; ++i) {
+            actors.push(makeAddr(string(abi.encodePacked("actor", vm.toString(i)))));
+        }
+
+        _populateHolders();
+
+        // Seed deep liquidity and open a real borrow so indices move over time.
+        _supplyAndUseAsCollateral(bootstrap, address(collateralAsset), MIN_AMOUNT);
+        _supplyAndUseAsCollateral(bootstrap, address(borrowAsset),     MIN_AMOUNT);
+
+        // Seed deep liquidity and open a real borrow so indices move over time.
+        _supplyAndUseAsCollateral(bootstrap, address(collateralAsset), 5_000_000e18);
+        _supplyAndUseAsCollateral(bootstrap, address(borrowAsset),     5_000_000e18);
+
+        vm.startPrank(bootstrap);
+        pool.borrow(address(collateralAsset), 500_000e18, 2, 0, bootstrap);
+        pool.borrow(address(borrowAsset),     500_000e18, 2, 0, bootstrap);
+        vm.stopPrank();
+
+        handler = address(new PoolHandler(address(pool), actors, assets));
+
+        // Define the handler functions to fuzz and their relative weights.
+
+        bytes4[] memory selectors = new bytes4[](9);
+        selectors[0]  = PoolHandler.warp.selector;
+        selectors[1]  = PoolHandler.supply.selector;
+        selectors[2]  = PoolHandler.withdraw.selector;
+        selectors[3]  = PoolHandler.borrow.selector;
+        selectors[4]  = PoolHandler.repay.selector;
+        selectors[5]  = PoolHandler.mintToTreasury.selector;
+        selectors[6]  = PoolHandler.liquidate.selector;
+        selectors[7] = PoolHandler.setPrice.selector;
+
+        uint8[] memory weights = new uint8[](13);
+        weights[0]  = 20;
+        weights[1]  = 20;
+        weights[2]  = 20;
+        weights[3]  = 20;
+        weights[4]  = 20;
+        weights[5]  = 20;
+        weights[6]  = 20;
+        weights[7]  = 50;
+
+        targetContract(handler);
+        targetSelector(FuzzSelector({ addr: handler, selectors: _generateSelectors(selectors, weights) }));
     }
 
 }

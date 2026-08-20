@@ -406,7 +406,9 @@ contract PoolHandler is Test {
         address[] memory assets = new address[](1);
         assets[0] = _getAsset(assetSeed);
 
-        amount = _bound(amount, MIN_AMOUNT, 100e18);
+        uint256 maxFlashLoanable = IERC20Like(assets[0]).balanceOf(_getAToken(assets[0]));
+
+        amount = _bound(amount, 0, maxFlashLoanable);
 
         uint256[] memory amounts = new uint256[](1);
         amounts[0] = amount;
@@ -422,7 +424,9 @@ contract PoolHandler is Test {
         address borrower = _getActor(actorSeed);
         address asset    = _getAsset(assetSeed);
 
-        amount = _bound(amount, MIN_AMOUNT, 100e18);
+        uint256 maxFlashLoanable = IERC20Like(asset).balanceOf(_getAToken(asset));
+
+        amount = _bound(amount, 0, maxFlashLoanable);
 
         vm.prank(borrower);
         pool.flashLoanSimple(flashLoanSimpleReceiver, asset, amount, new bytes(0), 0);
