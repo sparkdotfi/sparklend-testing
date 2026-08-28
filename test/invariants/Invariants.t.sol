@@ -36,7 +36,7 @@ abstract contract InvariantsTestBase is SparkLendTestBase {
 
     uint256 internal constant MIN_AMOUNT = 0.000000000001e18;  // 1e6
 
-    uint256 internal constant MAX_INDEX = 10e27;
+    uint256 internal constant MAX_INDEX = 100e27;
 
     address internal handler;
 

@@ -62,7 +62,13 @@ contract PoolHandler is Test {
 
     uint256 internal constant MIN_AMOUNT = 0.000000000001e18; // 1e6
 
-    uint256 internal constant MAX_INDEX = 10e27;
+    uint256 internal constant MAX_INDEX = 100e27;
+
+    // Total simulated time a campaign may advance, across every handler that moves the clock. The
+    // max borrow rate configured in SparkLendTestBase is 37% (base 5% + slope1 2% + slope2 30%), so
+    // even a reserve pinned at full utilisation for the whole budget compounds to e^(0.37 * 10) =
+    // ~40e27, leaving 2.5x of headroom under MAX_INDEX.
+    uint256 internal constant MAX_ELAPSED = 10 * 365 days;
 
     IPool public immutable pool;
 
@@ -71,6 +77,8 @@ contract PoolHandler is Test {
 
     address[] public actors;
     address[] public assets;
+
+    uint256 public elapsed;
 
     constructor(address pool_, address[] memory actors_, address[] memory assets_) {
         pool   = IPool(pool_);
@@ -89,16 +97,30 @@ contract PoolHandler is Test {
         return assets[seed % assets.length];
     }
 
+    // Every handler that moves the clock must go through here, otherwise the campaign can outrun
+    // MAX_ELAPSED and the index tolerance assumed by the invariants no longer holds.
+    function _warp(uint256 jump) internal {
+        uint256 remaining = MAX_ELAPSED - elapsed;
+
+        if (jump > remaining) jump = remaining;
+
+        elapsed += jump;
+
+        vm.warp(vm.getBlockTimestamp() + jump);
+    }
+
+    // Per-call slice of MAX_ELAPSED, so a deep campaign spreads its time budget across the whole run
+    // instead of burning it in the first few calls.
+    function _maxJump() internal view returns (uint256) {
+        return MAX_ELAPSED / uint256(vm.envOr("FOUNDRY_INVARIANT_DEPTH", uint256(100)));
+    }
+
     /**********************************************************************************************/
     /*** Actions                                                                                ***/
     /**********************************************************************************************/
 
     function warp(uint256 timeSeed) public {
-        // Load FOUNDRY_INVARIANT_DEPTH from env and set upper bound accordingly,
-        // warping 3 years if every call was a warp. This is to keep the index reasonable.
-        uint256 upperBound = 3 * 365 days / uint256(vm.envOr("FOUNDRY_INVARIANT_DEPTH", uint256(10 days)));
-        uint256 jump       = _bound(timeSeed, 1 seconds, upperBound);
-        vm.warp(vm.getBlockTimestamp() + jump);
+        _warp(_bound(timeSeed, 1 seconds, _maxJump()));
     }
 
     function supply(uint256 actorSeed, uint256 assetSeed, uint256 amount) external {
@@ -184,7 +206,9 @@ contract PoolHandler is Test {
         // Cap at reserve cash so the underlying transfer can't revert.
         if (maxBorrowable > cash) maxBorrowable = cash;
 
-        vm.assume(maxBorrowable >= MIN_AMOUNT);
+        // Needs room for both the lower bound and the headroom subtracted below, otherwise the
+        // bound inverts when maxBorrowable lands between one and two MIN_AMOUNT.
+        vm.assume(maxBorrowable >= 2 * MIN_AMOUNT);
 
         // Leave a few base currency units of headroom: percentDiv in validateBorrow is not an
         // exact inverse of percentMul in calculateAvailableBorrows, so the exact max can revert.
@@ -382,9 +406,10 @@ contract PoolHandler is Test {
     }
 
     function liquidate(uint256 timeSeed, uint256 liquidatorSeed, uint256 amount, bool receiveAToken) external {
-        uint256 jump = _bound(timeSeed, 30 days, 180 days);
-
-        vm.warp(vm.getBlockTimestamp() + jump);
+        // Accrue debt before looking for a target, but on the same budget as warp(): unbounded jumps
+        // here are what let a deep campaign run the indexes past MAX_INDEX. Price moves via setPrice
+        // remain the primary driver of liquidatable positions.
+        _warp(_bound(timeSeed, 1 seconds, _maxJump()));
 
         address user = _getLeastHealthyBorrower();
 
@@ -405,6 +430,17 @@ contract PoolHandler is Test {
 
         // ~10% chance of max cover.
         amount = _bound(amount, MIN_AMOUNT, (11 * maxDebtToCover) / 10);
+
+        // Paying the liquidator in underlying needs the collateral reserve to hold enough cash for
+        // the whole seize; borrows can leave it short. Take the aToken instead of discarding the
+        // call, which keeps liquidation coverage up.
+        if (!receiveAToken) {
+            uint256 collateralCash = IERC20Like(collateralAsset).balanceOf(_getAToken(collateralAsset));
+
+            if (_getMaxSeizedCollateral(user, debtAsset, collateralAsset) > collateralCash) {
+                receiveAToken = true;
+            }
+        }
 
         deal(debtAsset, liquidator, IERC20Like(debtAsset).balanceOf(liquidator) + amount);
 
@@ -677,6 +713,30 @@ contract PoolHandler is Test {
         uint256 maxDebtCoverableByCollateral = (collateralBalance * _getAssetPrice(collateralAsset) * 10_000) / (debtPrice * liquidationBonus);
 
         return maxCloseFactorDebt > maxDebtCoverableByCollateral ? maxDebtCoverableByCollateral : maxCloseFactorDebt;
+    }
+
+    // Upper bound on the collateral a liquidation of `user` can seize: what the close factor allows,
+    // grossed up by the liquidation bonus and capped at the collateral they actually hold. Mirrors
+    // the same-decimals assumption as _getMaxDebtToCover.
+    function _getMaxSeizedCollateral(
+        address user,
+        address debtAsset,
+        address collateralAsset
+    ) internal view returns (uint256) {
+        uint256 collateralPrice = _getAssetPrice(collateralAsset);
+
+        // Unknown seize, so treat it as unbounded and let the caller take the aToken path.
+        if (collateralPrice == 0) return type(uint256).max;
+
+        uint256 liquidationBonus = (pool.getReserveData(collateralAsset).configuration.data >> 32) & 0xFFFF;
+
+        uint256 seized = (
+            _getMaxDebtToCover(user, debtAsset, collateralAsset) * _getAssetPrice(debtAsset) * liquidationBonus
+        ) / (collateralPrice * 10_000);
+
+        uint256 collateralBalance = IERC20Like(_getAToken(collateralAsset)).balanceOf(user);
+
+        return seized > collateralBalance ? collateralBalance : seized;
     }
 
     function _getAToken(address asset) internal view returns (address) {
