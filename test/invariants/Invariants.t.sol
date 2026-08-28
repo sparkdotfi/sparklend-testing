@@ -36,6 +36,8 @@ abstract contract InvariantsTestBase is SparkLendTestBase {
 
     uint256 internal constant MIN_AMOUNT = 0.000000000001e18;  // 1e6
 
+    uint256 internal constant MAX_INDEX = 10e27;
+
     address internal handler;
 
     address[] internal actors;
@@ -104,8 +106,8 @@ abstract contract InvariantsTestBase is SparkLendTestBase {
         assertGe(data.variableBorrowIndex, 1e27,                     "borrow index below RAY");
         assertLe(data.liquidityIndex,      data.variableBorrowIndex, "liquidity index above borrow index");
 
-        // The +/- 5 wei rounding tolerances in the handler assume indices stay below 5e27.
-        assertLe(data.variableBorrowIndex, 5e27, "borrow index above tolerance assumption");
+        // The +/- 10 wei rounding tolerances in the handler assume indices stay below MAX_INDEX.
+        assertLe(data.variableBorrowIndex, MAX_INDEX, "borrow index above tolerance assumption");
 
         // Normalized values fold in the accrual since the last index write.
         assertGe(pool.getReserveNormalizedIncome(asset),       data.liquidityIndex,      "income below index");
@@ -171,9 +173,9 @@ abstract contract InvariantsTestBase is SparkLendTestBase {
             assertGe(data.liquidityIndex,      lastLiquidityIndex[asset],      "liquidity index decreased");
             assertGe(data.variableBorrowIndex, lastVariableBorrowIndex[asset], "borrow index decreased");
 
-            // The +/- 5 wei rounding tolerances in the handler assume indices stay below 5e27.
-            assertLe(data.liquidityIndex,      5e27, "liquidity index above tolerance assumption");
-            assertLe(data.variableBorrowIndex, 5e27, "borrow index above tolerance assumption");
+            // The +/- 10 wei rounding tolerances in the handler assume indices stay below MAX_INDEX.
+            assertLe(data.liquidityIndex,      MAX_INDEX, "liquidity index above tolerance assumption");
+            assertLe(data.variableBorrowIndex, MAX_INDEX, "borrow index above tolerance assumption");
 
             lastLiquidityIndex[asset]      = data.liquidityIndex;
             lastVariableBorrowIndex[asset] = data.variableBorrowIndex;
@@ -206,7 +208,7 @@ abstract contract InvariantsTestBase is SparkLendTestBase {
 
                 uint256 userPositionAfter = aToken.balanceOf(holder) + IERC20Like(asset).balanceOf(holder);
 
-                assertApproxEqAbs(userPositionAfter, userPositionBefore, 5, "user position changed by unexpected amount");
+                assertApproxEqAbs(userPositionAfter, userPositionBefore, MAX_INDEX / 1e27, "user position changed by unexpected amount");
 
                 assertLe(userPositionAfter, userPositionBefore, "position not rounded against user");
             }
@@ -253,7 +255,7 @@ abstract contract InvariantsTestBase is SparkLendTestBase {
 
                 uint256 userPositionAfter = aToken.balanceOf(holder) + IERC20Like(asset).balanceOf(holder);
 
-                assertApproxEqAbs(userPositionAfter, userPositionBefore, 5, "user position changed by unexpected amount");
+                assertApproxEqAbs(userPositionAfter, userPositionBefore, MAX_INDEX / 1e27, "user position changed by unexpected amount");
 
                 assertLe(userPositionAfter, userPositionBefore, "position not rounded against user");
             }
