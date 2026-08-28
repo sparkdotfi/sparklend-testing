@@ -90,12 +90,11 @@ contract DustLiquidationRoundingAttack is SparkLendTestBase {
         vm.stopPrank();
     }
 
-    function test_xautRounding_createsBadDebtWithOneRepaymentAndRoundedLiquidations() public {
+    function test_xautRounding_createsBadDebtWithOneRepaymentReverts() public {
         // Setup
         uint256 xautSeed       = 252;
         uint256 initialShares  = 120;
         uint256 daiBorrow      = 1.06599999e18;
-        uint256 oneAtomPayment = 0.005e18;  // $0.005 of DAI == value of one XAUT atom
 
         IERC20 variableDebtDai  = IERC20(pool.getReserveData(address(dai)).variableDebtTokenAddress);
         IERC20 variableDebtXaut = IERC20(pool.getReserveData(address(xaut)).variableDebtTokenAddress);
@@ -131,56 +130,67 @@ contract DustLiquidationRoundingAttack is SparkLendTestBase {
         ( , , , , , uint256 healthFactorBeforeRepay ) = pool.getUserAccountData(borrower);
         assertEq(healthFactorBeforeRepay, 1.000000009337068248e18);
 
+        vm.expectRevert(abi.encode("35"));
         vm.prank(borrower);
         pool.repayWithATokens(address(xaut), 1, 2);
+    }
 
-        assertEq(aXaut.scaledBalanceOf(borrower),      initialShares - 1);  // 119 scaled shares
-        assertEq(aXaut.balanceOf(borrower),            249);
-        assertEq(variableDebtDai.balanceOf(borrower),  daiBorrow);
-        assertEq(variableDebtXaut.balanceOf(borrower), 0);
+    function test_xautRounding_selfLiquidationsNoLongerValueExtractive() public {
+        // Setup
+        uint256 xautSeed       = 252;
+        uint256 initialShares  = 120;
+        uint256 daiBorrow      = 1.008e18;  // 80% LTV of the $1.26 of XAUT collateral
+        uint256 oneAtomPayment = 0.005e18;  // $0.005 of DAI == value of one XAUT atom
 
-        ( , , , , , uint256 healthFactorAfterRepay ) = pool.getUserAccountData(borrower);
-        assertEq(healthFactorAfterRepay, 0.992729840457127959e18);
+        IERC20 variableDebtDai = IERC20(pool.getReserveData(address(dai)).variableDebtTokenAddress);
 
-        // Step 6: Liquidate the borrower.
+        _setIndexes();
+
+        _supply(liquidityProvider, address(dai), 2e18);
+
+        // Step 1: Supply 252 XAUT atoms, 120 scaled shares at the 2.1 RAY liquidity index.
+        _supply(borrower, address(xaut), xautSeed);
+
+        assertEq(aXaut.scaledBalanceOf(borrower), initialShares);
+        assertEq(aXaut.balanceOf(borrower),       252);
+
+        // Step 2: Borrow DAI up to the LTV limit.
+        _borrow(borrower, address(dai), daiBorrow);
+
+        ( , , , , , uint256 healthFactorAtBorrow ) = pool.getUserAccountData(borrower);
+        assertEq(healthFactorAtBorrow, 1.0625e18);
+
+        // Step 3: Warp forward so accrued borrow interest puts the position underwater.
+        vm.warp(block.timestamp + 730 days);
+
+        ( , , , , , uint256 healthFactorUnderwater ) = pool.getUserAccountData(borrower);
+        assertEq(healthFactorUnderwater, 0.937502552199700053e18);
+
+        // Step 4: Self-liquidate in one-atom increment, taking aTokens and paying with borrowed DAI.
+        vm.prank(liquidator);
+        dai.approve(address(pool), type(uint256).max);
+
+        assertEq(aXaut.scaledBalanceOf(borrower),     initialShares);
+        assertEq(aXaut.balanceOf(borrower),           252);
+        assertEq(aXaut.scaledBalanceOf(liquidator),   0);
+        assertEq(aXaut.balanceOf(liquidator),         0);
+        assertEq(variableDebtDai.balanceOf(borrower), 1.142396884633911925e18);
+
         vm.prank(liquidator);
         pool.liquidationCall(address(xaut), address(dai), borrower, oneAtomPayment, true);
 
-        // Repay burned share 120->119; first liquidation seized share 119->118.
-        assertEq(aXaut.scaledBalanceOf(borrower),   118);
-        assertEq(aXaut.balanceOf(borrower),         247);
-        assertEq(aXaut.scaledBalanceOf(liquidator), 1);
-        assertEq(aXaut.balanceOf(liquidator),       2);
+        // The one seized atom scales down to zero shares, so no collateral is transferred.
+        assertEq(aXaut.scaledBalanceOf(borrower),     initialShares);
+        assertEq(aXaut.balanceOf(borrower),           252);
+        assertEq(aXaut.scaledBalanceOf(liquidator),   0);
+        assertEq(aXaut.balanceOf(liquidator),         0);
+        assertEq(variableDebtDai.balanceOf(borrower), 1.142396884633911925e18 - oneAtomPayment + 1);
 
-        ( , , , , , uint256 healthFactor ) = pool.getUserAccountData(borrower);
-        assertEq(healthFactor, 0.989396804801100894e18);
+        ( , , , , , uint256 healthFactorAfterLiquidation ) = pool.getUserAccountData(borrower);
 
-        // Remaining 118 tiny liquidations, each seizing one whole scaled share for one atom.
-        for (uint256 i = 1; i < 119; i++) {
-            vm.prank(liquidator);
-            pool.liquidationCall(address(xaut), address(dai), borrower, oneAtomPayment, true);
-        }
-
-        assertEq(aXaut.scaledBalanceOf(borrower),   0);
-        assertEq(aXaut.balanceOf(borrower),         0);
-        assertEq(aXaut.scaledBalanceOf(liquidator), 119);
-        assertEq(aXaut.balanceOf(liquidator),       249);
-
-        // The borrower is left with unbacked DAI debt: 1.06599999 - 119 * 0.005 = 0.47099999.
-        assertEq(variableDebtDai.balanceOf(borrower), 0.47099999e18);
-
-        // Liquidator redeems the seized collateral: floor(119 * 2.1) = 249 XAUT atoms.
-        _withdraw(liquidator, address(xaut), type(uint256).max);
-        assertEq(xaut.balanceOf(liquidator), 249);
-
-        // Net extraction (value per atom == $0.005): borrowed DAI - liquidation payments
-        //   + redeemed atoms - initial seed = $0.46099999.
-        uint256 finalXautAtoms = 250;  // 1 borrowed atom kept + 249 redeemed
-        uint256 profit =
-            (daiBorrow + finalXautAtoms * oneAtomPayment)
-            - (oneAtomPayment * 119 + xautSeed * oneAtomPayment);
-
-        assertEq(profit, 0.46099999e18);
+        // Each call only burns debt, so the health factor increases and liquidations stop
+        // being possible. Under the old rounding it fell with every call, down to zero collateral.
+        assertEq(healthFactorAfterLiquidation, 0.94162381611576237e18);
     }
 
 }
