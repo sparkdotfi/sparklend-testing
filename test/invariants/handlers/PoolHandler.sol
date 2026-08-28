@@ -62,6 +62,8 @@ contract PoolHandler is Test {
 
     uint256 internal constant MIN_AMOUNT = 0.000000000001e18; // 1e6
 
+    uint256 internal constant MAX_INDEX = 10e27;
+
     IPool public immutable pool;
 
     address public immutable flashLoanReceiver;
@@ -92,7 +94,10 @@ contract PoolHandler is Test {
     /**********************************************************************************************/
 
     function warp(uint256 timeSeed) public {
-        uint256 jump = _bound(timeSeed, 1 seconds, 10 days);
+        // Load FOUNDRY_INVARIANT_DEPTH from env and set upper bound accordingly,
+        // warping 3 years if every call was a warp. This is to keep the index reasonable.
+        uint256 upperBound = 3 * 365 days / uint256(vm.envUint("FOUNDRY_INVARIANT_DEPTH"));
+        uint256 jump = _bound(timeSeed, 1 seconds, upperBound);
         vm.warp(vm.getBlockTimestamp() + jump);
     }
 
@@ -119,9 +124,9 @@ contract PoolHandler is Test {
         uint256 mintedATokens = aToken.balanceOf(actor) - aTokenStartingBalance;
 
         // Minted aTokens always round against the user, up to index / 1e27
-        // Assuming liquidityIndex doesn't get above 5e27
-        assertLe(mintedATokens, amount,     "mintedATokens > amount");
-        assertGe(mintedATokens, amount - 5, "mintedATokens < amount - 5");
+        // Assuming liquidityIndex doesn't get above MAX_INDEX
+        assertLe(mintedATokens, amount,                    "mintedATokens > amount");
+        assertGe(mintedATokens, amount - MAX_INDEX / 1e27, "mintedATokens < amount - MAX_INDEX / 1e27");
     }
 
     function withdraw(uint256 actorSeed, uint256 assetSeed, uint256 amount) external {
@@ -160,9 +165,9 @@ contract PoolHandler is Test {
         uint256 burnedATokens = aTokenStartingBalance - IERC20Like(_getAToken(asset)).balanceOf(actor);
 
         // Burned aTokens always round against the user, up to index / 1e27
-        // Assuming liquidityIndex doesn't get above 5e27
-        assertGe(burnedATokens, amount,     "burnedATokens < amount");
-        assertLe(burnedATokens, amount + 5, "burnedATokens > amount + 5");
+        // Assuming liquidityIndex doesn't get above MAX_INDEX
+        assertGe(burnedATokens, amount,                    "burnedATokens < amount");
+        assertLe(burnedATokens, amount + MAX_INDEX / 1e27, "burnedATokens > amount + MAX_INDEX / 1e27");
     }
 
     function borrow(uint256 actorSeed, uint256 assetSeed, uint256 amount) external {
@@ -198,9 +203,9 @@ contract PoolHandler is Test {
         uint256 mintedDebtTokens = IERC20Like(debtToken).balanceOf(actor) - debtStartingBalance;
 
         // Minted debt tokens always round against the user, up to index / 1e27
-        // Assuming variableBorrowIndex doesn't get above 5e27
-        assertGe(mintedDebtTokens, amount,     "mintedDebtTokens < amount");
-        assertLe(mintedDebtTokens, amount + 5, "mintedDebtTokens > amount + 5");
+        // Assuming variableBorrowIndex doesn't get above MAX_INDEX
+        assertGe(mintedDebtTokens, amount,                    "mintedDebtTokens < amount");
+        assertLe(mintedDebtTokens, amount + MAX_INDEX / 1e27, "mintedDebtTokens > amount + MAX_INDEX / 1e27");
 
         ( ,,,,, uint256 healthFactor ) = pool.getUserAccountData(actor);
 
@@ -213,10 +218,10 @@ contract PoolHandler is Test {
 
         uint256 debt = IERC20Like(_getVariableDebtToken(asset)).balanceOf(actor);
 
-        vm.assume(debt >= 5);  // Avoids burn amount going to zero if index is less than 5e27.
+        vm.assume(debt >= MAX_INDEX / 1e27);  // Avoids burn amount going to zero if index is less than MAX_INDEX.
 
         // ~10% chance of max repay if entire debt is repayable.
-        amount = _bound(amount, 5, (debt * 11) / 10);
+        amount = _bound(amount, MAX_INDEX / 1e27, (debt * 11) / 10);
 
         deal(asset, actor, IERC20Like(asset).balanceOf(actor) + amount);
 
@@ -246,12 +251,23 @@ contract PoolHandler is Test {
         uint256 burnedDebtTokens = debt - IERC20Like(_getVariableDebtToken(asset)).balanceOf(actor);
 
         // Burned debt tokens always round against the user, up to index / 1e27
-        // Assuming variableBorrowIndex doesn't get above 5e27
-        assertLe(burnedDebtTokens, actualRepaid,     "burnedDebtTokens > actualRepaid");
-        assertGe(burnedDebtTokens, actualRepaid - 5, "burnedDebtTokens < actualRepaid - 5");
+        // Assuming variableBorrowIndex doesn't get above MAX_INDEX
+        assertLe(burnedDebtTokens, actualRepaid,                    "burnedDebtTokens > actualRepaid");
+        assertGe(burnedDebtTokens, actualRepaid - MAX_INDEX / 1e27, "burnedDebtTokens < actualRepaid - MAX_INDEX / 1e27");
 
-        // Debt reduced within index rounding, either direction (same 5 wei bound as supply, index <= 5e27)
-        assertApproxEqAbs(IERC20Like(_getVariableDebtToken(asset)).balanceOf(actor), debt - actualRepaid, 5);
+        // Debt reduced within index rounding, either direction (same MAX_INDEX / 1e27 bound as supply, index <= MAX_INDEX)
+        assertApproxEqAbs(IERC20Like(_getVariableDebtToken(asset)).balanceOf(actor), debt - actualRepaid, MAX_INDEX / 1e27);
+    }
+
+    struct TransferAssertionVars {
+        uint256 startingATokenBalanceFrom;
+        uint256 startingATokenBalanceTo;
+        uint256 startingScaledBalanceFrom;
+        uint256 startingScaledBalanceTo;
+        uint256 transferredATokens;
+        uint256 transferredScaledBalance;
+        uint256 receivedATokens;
+        uint256 receivedScaledBalance;
     }
 
     function transfer(uint256 fromSeed, uint256 toSeed, uint256 assetSeed, uint256 amount) external {
@@ -259,15 +275,17 @@ contract PoolHandler is Test {
         address to    = _getActor(toSeed);
         address asset = _getAsset(assetSeed);
 
+        TransferAssertionVars memory vars;
+
         uint256 maxTransferable = _getMaxWithdrawable(from, asset);
 
         IScaledTokenLike aToken = IScaledTokenLike(_getAToken(asset));
 
-        uint256 startingATokenBalanceFrom = aToken.balanceOf(from);
-        uint256 startingATokenBalanceTo   = aToken.balanceOf(to);
+        vars.startingATokenBalanceFrom = aToken.balanceOf(from);
+        vars.startingATokenBalanceTo   = aToken.balanceOf(to);
 
-        uint256 startingScaledBalanceFrom = aToken.scaledBalanceOf(from);
-        uint256 startingScaledBalanceTo   = aToken.scaledBalanceOf(to);
+        vars.startingScaledBalanceFrom = aToken.scaledBalanceOf(from);
+        vars.startingScaledBalanceTo   = aToken.scaledBalanceOf(to);
 
         vm.assume(maxTransferable >= MIN_AMOUNT);
 
@@ -276,30 +294,30 @@ contract PoolHandler is Test {
         vm.prank(from);
         aToken.transfer(to, amount);
 
-        uint256 transferredATokens       = startingATokenBalanceFrom - aToken.balanceOf(from);
-        uint256 transferredScaledBalance = startingScaledBalanceFrom - aToken.scaledBalanceOf(from);
+        vars.transferredATokens       = vars.startingATokenBalanceFrom - aToken.balanceOf(from);
+        vars.transferredScaledBalance = vars.startingScaledBalanceFrom - aToken.scaledBalanceOf(from);
 
-        uint256 receivedATokens       = aToken.balanceOf(to) - startingATokenBalanceTo;
-        uint256 receivedScaledBalance = aToken.scaledBalanceOf(to) - startingScaledBalanceTo;
+        vars.receivedATokens       = aToken.balanceOf(to) - vars.startingATokenBalanceTo;
+        vars.receivedScaledBalance = aToken.scaledBalanceOf(to) - vars.startingScaledBalanceTo;
 
         // If the sender and recipient are the same, the deltas should all be zero
         if (from == to) {
-            assertEq(transferredATokens,       0);
-            assertEq(transferredScaledBalance, 0);
-            assertEq(receivedATokens,          0);
-            assertEq(receivedScaledBalance,    0);
+            assertEq(vars.transferredATokens,       0);
+            assertEq(vars.transferredScaledBalance, 0);
+            assertEq(vars.receivedATokens,          0);
+            assertEq(vars.receivedScaledBalance,    0);
             return;
         }
 
         // Scaled balance reduced from sender rounds up
-        assertGe(transferredATokens, amount,     "transferredATokens < amount");
-        assertLe(transferredATokens, amount + 5, "transferredATokens > amount + 5");
+        assertGe(vars.transferredATokens, amount,                    "transferredATokens < amount");
+        assertLe(vars.transferredATokens, amount + MAX_INDEX / 1e27, "transferredATokens > amount + MAX_INDEX / 1e27");
 
         // Difference in rebased amounts can be at most one unit because of floor rounding on balanceOf
-        assertApproxEqAbs(receivedATokens, transferredATokens, 1, "receivedATokens > transferredATokens");
+        assertApproxEqAbs(vars.receivedATokens, vars.transferredATokens, 1, "receivedATokens > transferredATokens");
 
         // Scaled balance transfer is always exact
-        assertEq(transferredScaledBalance, receivedScaledBalance);
+        assertEq(vars.transferredScaledBalance, vars.receivedScaledBalance);
     }
 
     function transferFrom(uint256 fromSeed, uint256 toSeed, uint256 assetSeed, uint256 amount) external {
@@ -331,9 +349,9 @@ contract PoolHandler is Test {
         uint256 balanceDecrease = startingBalanceFrom - aToken.balanceOf(from);
 
         // Sender's balance decrease rounds against them, up to index / 1e27
-        // Assuming liquidityIndex doesn't get above 5e27
-        assertGe(balanceDecrease, amount,     "balanceDecrease < amount");
-        assertLe(balanceDecrease, amount + 5, "balanceDecrease > amount + 5");
+        // Assuming liquidityIndex doesn't get above MAX_INDEX
+        assertGe(balanceDecrease, amount,                    "balanceDecrease < amount");
+        assertLe(balanceDecrease, amount + MAX_INDEX / 1e27, "balanceDecrease > amount + MAX_INDEX / 1e27");
 
         // Allowance is consumed by the sender's actual balance decrease, capped at the approval.
         uint256 expectedConsumption = balanceDecrease > allowance ? allowance : balanceDecrease;
