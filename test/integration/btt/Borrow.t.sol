@@ -192,8 +192,16 @@ contract BorrowFailureTests is BorrowTestBase {
         vm.expectRevert(bytes(Errors.COLLATERAL_CANNOT_COVER_NEW_BORROW));
         pool.borrow(address(borrowAsset), 500 ether + 1e10, 2, 0, borrower);
 
-        // Rounds down to 500e8 here so boundary is 500 ether - 1e10
+        // The LTV check rounds the requested amount down to 500e8 base currency units, so anything
+        // below 500 ether + 1e10 passes it, but the health factor check done after the debt is
+        // minted rounds the resulting debt up, making 500 ether the real boundary.
+        vm.expectRevert(bytes(Errors.HEALTH_FACTOR_LOWER_THAN_LIQUIDATION_THRESHOLD));
         pool.borrow(address(borrowAsset), 500 ether + 1e10 - 1, 2, 0, borrower);
+
+        vm.expectRevert(bytes(Errors.HEALTH_FACTOR_LOWER_THAN_LIQUIDATION_THRESHOLD));
+        pool.borrow(address(borrowAsset), 500 ether + 1, 2, 0, borrower);
+
+        pool.borrow(address(borrowAsset), 500 ether, 2, 0, borrower);
     }
 
     function test_borrow_userChoosesStableBorrow() public {
@@ -428,7 +436,8 @@ contract BorrowConcreteTests is BorrowTestBase {
 
         _existingBorrowSomeTimePassedTest();
 
-        assertEq(pool.getReserveData(address(collateralAsset)).isolationModeTotalDebt, 600_00);
+        // Borrow of 600 ether - 1 rounds down to 599_99 of isolation mode debt
+        assertEq(pool.getReserveData(address(collateralAsset)).isolationModeTotalDebt, 599_99);
     }
 
     /**********************************************************************************************/
@@ -577,14 +586,17 @@ contract BorrowConcreteTests is BorrowTestBase {
         _assertDebtTokenState(debtTokenParams);
         _assertAssetState(assetParams);
 
+        // NOTE: Borrowing one wei below the LTV maximum because the borrow index has grown above
+        //       1e27, so a 500 ether borrow mints 500 ether + 1 wei of debt (debt is rounded up),
+        //       which fails the health factor check done after the debt is minted.
         vm.prank(borrower);
-        pool.borrow(address(borrowAsset), 500 ether, 2, 0, borrower);
+        pool.borrow(address(borrowAsset), 500 ether - 1, 2, 0, borrower);
 
         ( uint256 borrowRate, uint256 liquidityRate )
-            = _getUpdatedRates(600 ether + borrowerDebt + 1, 1000 ether + borrowerDebt + 1);  // +1 from debt token rounding
+            = _getUpdatedRates(600 ether + borrowerDebt, 1000 ether + borrowerDebt + 1);  // +1 from debt token rounding
 
-        assertEq(borrowRate,    0.065000525110257445296663721e27);  // ~60% utilized: 5% + 60%/80% * 2% = ~6.5%
-        assertEq(liquidityRate, 0.037051596345660783435879811e27);  // ~60% utilized: 60% * ~6.5% * (1 - reserveFactor) = ~3.9% * 95%
+        assertEq(borrowRate,    0.065000525110257445296638723e27);  // ~60% utilized: 5% + 60%/80% * 2% = ~6.5%
+        assertEq(liquidityRate, 0.037051596345660783435803814e27);  // ~60% utilized: 60% * ~6.5% * (1 - reserveFactor) = ~3.9% * 95%
 
         uint256 expectedLiquidityIndex      = 1e27 + (1e27 * 0.00525e27 * 95/100 / 100 / 1e27);  // Normalized yield accrues 1% of APR
         uint256 expectedVariableBorrowIndex = 1e27 * compoundedNormalizedInterest / 1e27;        // Accrues slightly more than 1% of APR because of compounded interest
@@ -600,11 +612,11 @@ contract BorrowConcreteTests is BorrowTestBase {
         poolParams.accruedToTreasury         = borrowerDebt * 5/100 * 1e27 / expectedLiquidityIndex + 1;  // Scaled value
 
         // Borrower debt only accrued against existing borrow
-        debtTokenParams.userBalance = 500 ether + 1;  // Rounding
-        debtTokenParams.totalSupply = 600 ether + borrowerDebt + 1;  // Rounding
+        debtTokenParams.userBalance = 500 ether;  // Debt rounded up from the 500 ether - 1 borrow
+        debtTokenParams.totalSupply = 600 ether + borrowerDebt;
 
-        assetParams.aTokenBalance = 400 ether;
-        assetParams.userBalance   = 500 ether;
+        assetParams.aTokenBalance = 400 ether + 1;
+        assetParams.userBalance   = 500 ether - 1;
 
         _assertPoolReserveState(poolParams);
         _assertDebtTokenState(debtTokenParams);
