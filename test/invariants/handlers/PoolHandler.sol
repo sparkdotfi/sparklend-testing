@@ -96,8 +96,8 @@ contract PoolHandler is Test {
     function warp(uint256 timeSeed) public {
         // Load FOUNDRY_INVARIANT_DEPTH from env and set upper bound accordingly,
         // warping 3 years if every call was a warp. This is to keep the index reasonable.
-        uint256 upperBound = 3 * 365 days / uint256(vm.envUint("FOUNDRY_INVARIANT_DEPTH"));
-        uint256 jump = _bound(timeSeed, 1 seconds, upperBound);
+        uint256 upperBound = 3 * 365 days / uint256(vm.envOr("FOUNDRY_INVARIANT_DEPTH", uint256(10 days)));
+        uint256 jump       = _bound(timeSeed, 1 seconds, upperBound);
         vm.warp(vm.getBlockTimestamp() + jump);
     }
 
