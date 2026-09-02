@@ -3,7 +3,11 @@ pragma solidity ^0.8.0;
 
 import "forge-std/Test.sol";
 
-import { Errors } from "sparklend-v1-core/contracts/protocol/libraries/helpers/Errors.sol";
+import { UserConfiguration } from "sparklend-v1-core/contracts/protocol/libraries/configuration/UserConfiguration.sol";
+import { Errors }            from "sparklend-v1-core/contracts/protocol/libraries/helpers/Errors.sol";
+import { DataTypes }         from "sparklend-v1-core/contracts/protocol/libraries/types/DataTypes.sol";
+
+import { MockOracle } from "test/mocks/MockOracle.sol";
 
 import { SparkLendTestBase } from "test/SparkLendTestBase.sol";
 
@@ -73,15 +77,59 @@ contract RepayWithATokensFailureTests is RepayWithATokensTestBase {
         pool.repayWithATokens(address(borrowAsset), 500 ether, 2);
     }
 
+    function test_repayWithATokens_repaidAssetIsCollateralHealthFactorBelowOneBoundary() public {
+        _initCollateral({
+            asset:                address(borrowAsset),
+            ltv:                  50_00,
+            liquidationThreshold: 50_00,
+            liquidationBonus:     100_01
+        });
+
+        vm.prank(borrower);
+        pool.setUserUseReserveAsCollateral(address(borrowAsset), true);
+
+        _withdraw(borrower, address(borrowAsset), 400 ether);
+
+        // Put the borrower underwater without touching the repaid asset's price
+        MockOracle(aaveOracle.getSourceOfAsset(address(collateralAsset))).__setPrice(0.2e8);
+
+        ( ,,,,, uint256 healthFactor ) = pool.getUserAccountData(borrower);
+
+        assertEq(healthFactor, 0.8e18);  // (1000 * 0.2 * 50% + 600 * 50%) / 500
+
+        // Repaying burns equal amounts of debt and collateral so HF improves by 50% of the
+        // repaid amount; 200 ether is the exact amount that brings the HF back to 1.
+        // NOTE: HF calculations are done in 1e8 precision and collateral rounds down while debt
+        //       rounds up, so 2e10 below is the first amount fully below the boundary (at 1e10
+        //       below, the half-up rounding in percentMul lands exactly on an HF of 1).
+        vm.startPrank(borrower);
+
+        vm.expectRevert(bytes(Errors.HEALTH_FACTOR_LOWER_THAN_LIQUIDATION_THRESHOLD));
+        pool.repayWithATokens(address(borrowAsset), 200 ether - 2e10, 2);
+
+        pool.repayWithATokens(address(borrowAsset), 200 ether, 2);
+
+        ( ,,,,, healthFactor ) = pool.getUserAccountData(borrower);
+
+        assertEq(healthFactor, 1e18);
+    }
+
 }
 
 contract RepayWithATokensConcreteTests is RepayWithATokensTestBase {
 
+    using UserConfiguration for DataTypes.UserConfigurationMap;
+
+    event ReserveUsedAsCollateralDisabled(address indexed reserve, address indexed user);
+
     address debtToken;
+
+    uint256 borrowAssetId;
 
     function setUp() public virtual override {
         super.setUp();
-        debtToken = pool.getReserveData(address(borrowAsset)).variableDebtTokenAddress;
+        debtToken     = pool.getReserveData(address(borrowAsset)).variableDebtTokenAddress;
+        borrowAssetId = pool.getReserveData(address(borrowAsset)).id;
     }
 
     modifier givenNoTimeHasPassedSinceBorrow { _; }
@@ -92,6 +140,19 @@ contract RepayWithATokensConcreteTests is RepayWithATokensTestBase {
     }
 
     modifier givenNotInIsolationMode { _; }
+
+    modifier givenRepaidAssetIsUsedAsCollateral {
+        _initCollateral({
+            asset:                address(borrowAsset),
+            ltv:                  50_00,
+            liquidationThreshold: 50_00,
+            liquidationBonus:     100_01
+        });
+
+        vm.prank(borrower);
+        pool.setUserUseReserveAsCollateral(address(borrowAsset), true);
+        _;
+    }
 
     modifier givenInIsolationMode {
         // Remove liquidity so initial DC can be set
@@ -305,6 +366,181 @@ contract RepayWithATokensConcreteTests is RepayWithATokensTestBase {
         //       and the current amount, and the debt will be overwritten to zero. In this example
         //       it's paying back 501.85 of iso debt when there is 500 in storage.
         assertEq(pool.getReserveData(address(collateralAsset)).isolationModeTotalDebt, 0);
+    }
+
+    function test_repayWithATokens_17()
+        givenRepaidAssetIsUsedAsCollateral
+        public
+    {
+        // Reduce the aToken balance to exactly the debt so a max repay burns the whole balance
+        _withdraw(borrower, address(borrowAsset), 500 ether);
+
+        AssertPoolReserveStateParams memory poolParams = AssertPoolReserveStateParams({
+            asset:                     address(borrowAsset),
+            liquidityIndex:            1e27,
+            currentLiquidityRate:      0.3515e27,  // 37% * 95% (100% utilization after withdraw)
+            variableBorrowIndex:       1e27,
+            currentVariableBorrowRate: 0.37e27,    // 5% + 2% + 30% (over optimal)
+            currentStableBorrowRate:   0,
+            lastUpdateTimestamp:       1,
+            accruedToTreasury:         0,
+            unbacked:                  0
+        });
+
+        AssertDebtTokenStateParams memory debtTokenParams = AssertDebtTokenStateParams({
+            user:        borrower,
+            debtToken:   debtToken,
+            userBalance: 500 ether,
+            totalSupply: 500 ether
+        });
+
+        AssertATokenStateParams memory aTokenParams = AssertATokenStateParams({
+            user:        borrower,
+            aToken:      address(aBorrowAsset),
+            userBalance: 500 ether,
+            totalSupply: 500 ether
+        });
+
+        _assertPoolReserveState(poolParams);
+        _assertDebtTokenState(debtTokenParams);
+        _assertATokenState(aTokenParams);
+
+        assertEq(pool.getUserConfiguration(borrower).isUsingAsCollateral(borrowAssetId), true);
+        assertEq(pool.getUserConfiguration(borrower).isBorrowing(borrowAssetId),         true);
+
+        vm.expectEmit(true, true, true, true, address(pool));
+        emit ReserveUsedAsCollateralDisabled(address(borrowAsset), borrower);
+
+        vm.prank(borrower);
+        pool.repayWithATokens(address(borrowAsset), type(uint256).max, 2);
+
+        // No more outstanding debt
+        poolParams.currentLiquidityRate      = 0;
+        poolParams.currentVariableBorrowRate = 0.05e27;
+
+        debtTokenParams.userBalance = 0;
+        debtTokenParams.totalSupply = 0;
+
+        aTokenParams.userBalance = 0;
+        aTokenParams.totalSupply = 0;
+
+        _assertPoolReserveState(poolParams);
+        _assertDebtTokenState(debtTokenParams);
+        _assertATokenState(aTokenParams);
+
+        assertEq(pool.getUserConfiguration(borrower).isUsingAsCollateral(borrowAssetId), false);
+        assertEq(pool.getUserConfiguration(borrower).isBorrowing(borrowAssetId),         false);
+    }
+
+    function test_repayWithATokens_18()
+        givenRepaidAssetIsUsedAsCollateral
+        public
+    {
+        AssertPoolReserveStateParams memory poolParams = AssertPoolReserveStateParams({
+            asset:                     address(borrowAsset),
+            liquidityIndex:            1e27,
+            currentLiquidityRate:      0.0296875e27,  // 3.125% * 95%
+            variableBorrowIndex:       1e27,
+            currentVariableBorrowRate: 0.0625e27,  // 5% + 2% * (50%/80%)
+            currentStableBorrowRate:   0,
+            lastUpdateTimestamp:       1,
+            accruedToTreasury:         0,
+            unbacked:                  0
+        });
+
+        AssertDebtTokenStateParams memory debtTokenParams = AssertDebtTokenStateParams({
+            user:        borrower,
+            debtToken:   debtToken,
+            userBalance: 500 ether,
+            totalSupply: 500 ether
+        });
+
+        AssertATokenStateParams memory aTokenParams = AssertATokenStateParams({
+            user:        borrower,
+            aToken:      address(aBorrowAsset),
+            userBalance: 1000 ether,
+            totalSupply: 1000 ether
+        });
+
+        _assertPoolReserveState(poolParams);
+        _assertDebtTokenState(debtTokenParams);
+        _assertATokenState(aTokenParams);
+
+        assertEq(pool.getUserConfiguration(borrower).isUsingAsCollateral(borrowAssetId), true);
+
+        vm.prank(borrower);
+        pool.repayWithATokens(address(borrowAsset), 200 ether, 2);
+
+        poolParams.currentLiquidityRate      = 0.02115234375e27;  // 5.9375% * 37.5% * 95%
+        poolParams.currentVariableBorrowRate = 0.059375e27;       // 5% + 2% * (37.5%/80%)
+
+        debtTokenParams.userBalance = 300 ether;
+        debtTokenParams.totalSupply = 300 ether;
+
+        aTokenParams.userBalance = 800 ether;
+        aTokenParams.totalSupply = 800 ether;
+
+        _assertPoolReserveState(poolParams);
+        _assertDebtTokenState(debtTokenParams);
+        _assertATokenState(aTokenParams);
+
+        assertEq(pool.getUserConfiguration(borrower).isUsingAsCollateral(borrowAssetId), true);
+        assertEq(pool.getUserConfiguration(borrower).isBorrowing(borrowAssetId),         true);
+    }
+
+    function test_repayWithATokens_19() public {
+        // Add outside liquidity so the borrower can withdraw below their debt
+        _supply(lender, address(borrowAsset), 500 ether);
+        _withdraw(borrower, address(borrowAsset), 700 ether);
+
+        AssertPoolReserveStateParams memory poolParams = AssertPoolReserveStateParams({
+            asset:                     address(borrowAsset),
+            liquidityIndex:            1e27,
+            currentLiquidityRate:      0.03896484375e27,  // 6.5625% * 62.5% * 95%
+            variableBorrowIndex:       1e27,
+            currentVariableBorrowRate: 0.065625e27,  // 5% + 2% * (62.5%/80%)
+            currentStableBorrowRate:   0,
+            lastUpdateTimestamp:       1,
+            accruedToTreasury:         0,
+            unbacked:                  0
+        });
+
+        AssertDebtTokenStateParams memory debtTokenParams = AssertDebtTokenStateParams({
+            user:        borrower,
+            debtToken:   debtToken,
+            userBalance: 500 ether,
+            totalSupply: 500 ether
+        });
+
+        AssertATokenStateParams memory aTokenParams = AssertATokenStateParams({
+            user:        borrower,
+            aToken:      address(aBorrowAsset),
+            userBalance: 300 ether,
+            totalSupply: 800 ether
+        });
+
+        _assertPoolReserveState(poolParams);
+        _assertDebtTokenState(debtTokenParams);
+        _assertATokenState(aTokenParams);
+
+        vm.prank(borrower);
+        pool.repayWithATokens(address(borrowAsset), type(uint256).max, 2);
+
+        // Max uint resolves to the 300 ether aToken balance, not the 500 ether debt
+        poolParams.currentLiquidityRate      = 0.0228e27;  // 6% * 40% * 95%
+        poolParams.currentVariableBorrowRate = 0.06e27;    // 5% + 2% * (40%/80%)
+
+        debtTokenParams.userBalance = 200 ether;
+        debtTokenParams.totalSupply = 200 ether;
+
+        aTokenParams.userBalance = 0;
+        aTokenParams.totalSupply = 500 ether;
+
+        _assertPoolReserveState(poolParams);
+        _assertDebtTokenState(debtTokenParams);
+        _assertATokenState(aTokenParams);
+
+        assertEq(pool.getUserConfiguration(borrower).isBorrowing(borrowAssetId), true);
     }
 
     /**********************************************************************************************/

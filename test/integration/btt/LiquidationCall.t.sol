@@ -1237,6 +1237,139 @@ contract LiquidationCallConcreteTest is LiquidationCallTestBase {
         assertEq(pool.getReserveData(address(collateralAsset)).isolationModeTotalDebt, 0);
     }
 
+    function test_liquidationCall_19() public {
+        vm.prank(admin);
+        poolConfigurator.setReserveBorrowing(address(collateralAsset), true);
+
+        _supply(borrower, address(collateralAsset), 1000 ether);  // 2000 ether total collateral
+        _borrow(borrower, address(collateralAsset), 300 ether);
+
+        // Same-asset HF is price-independent, so make the account liquidatable through the
+        // borrowAsset leg instead
+        MockOracle(aaveOracle.getSourceOfAsset(address(borrowAsset))).__setPrice(2e8);
+
+        ( ,,,,, uint256 healthFactor ) = pool.getUserAccountData(borrower);
+
+        assertEq(healthFactor, 0.769230769230769231e18);  // (2000 * 50%) / (500 * 2 + 300), wadDiv rounds half-up
+
+        address collateralDebtToken
+            = pool.getReserveData(address(collateralAsset)).variableDebtTokenAddress;
+
+        AssertPoolReserveStateParams memory collateralReserveParams = AssertPoolReserveStateParams({
+            asset:                     address(collateralAsset),
+            liquidityIndex:            1e27,
+            currentLiquidityRate:      0.007659375e27,  // 5.375% * 15% * 95%
+            variableBorrowIndex:       1e27,
+            currentVariableBorrowRate: 0.05375e27,      // 5% + 2% * (15%/80%)
+            currentStableBorrowRate:   0,
+            lastUpdateTimestamp:       1,
+            accruedToTreasury:         0,
+            unbacked:                  0
+        });
+
+        AssertPoolReserveStateParams memory borrowReserveParams = AssertPoolReserveStateParams({
+            asset:                     address(borrowAsset),
+            liquidityIndex:            1e27,
+            currentLiquidityRate:      0.37e27 * 0.95,
+            variableBorrowIndex:       1e27,
+            currentVariableBorrowRate: 0.37e27,
+            currentStableBorrowRate:   0,
+            lastUpdateTimestamp:       1,
+            accruedToTreasury:         0,
+            unbacked:                  0
+        });
+
+        AssertATokenStateParams memory aCollateralAssetParams = AssertATokenStateParams({
+            user:        borrower,
+            aToken:      address(aCollateralAsset),
+            userBalance: 2000 ether,
+            totalSupply: 2000 ether
+        });
+
+        AssertDebtTokenStateParams memory collateralDebtTokenParams = AssertDebtTokenStateParams({
+            user:        borrower,
+            debtToken:   collateralDebtToken,
+            userBalance: 300 ether,
+            totalSupply: 300 ether
+        });
+
+        AssertDebtTokenStateParams memory borrowAssetDebtTokenParams = AssertDebtTokenStateParams({
+            user:        borrower,
+            debtToken:   debtToken,
+            userBalance: 500 ether,
+            totalSupply: 500 ether
+        });
+
+        AssertAssetStateParams memory collateralAssetParams = AssertAssetStateParams({
+            user:          liquidator,
+            asset:         address(collateralAsset),
+            allowance:     0,
+            userBalance:   0,
+            aTokenBalance: 1700 ether  // 2000 supplied - 300 borrowed
+        });
+
+        _assertPoolReserveState(collateralReserveParams);
+        _assertPoolReserveState(borrowReserveParams);
+        _assertATokenState(aCollateralAssetParams);
+        _assertDebtTokenState(collateralDebtTokenParams);
+        _assertDebtTokenState(borrowAssetDebtTokenParams);
+        _assertAssetState(collateralAssetParams);
+
+        assertEq(pool.getUserConfiguration(borrower).isUsingAsCollateral(collateralAssetId), true);
+        assertEq(pool.getUserConfiguration(borrower).isBorrowing(collateralAssetId),         true);
+        assertEq(pool.getUserConfiguration(borrower).isBorrowing(borrowAssetId),             true);
+
+        vm.startPrank(liquidator);
+        collateralAsset.mint(liquidator, 100 ether);
+        collateralAsset.approve(address(pool), 100 ether);
+
+        pool.liquidationCall(
+            address(collateralAsset),
+            address(collateralAsset),
+            borrower,
+            100 ether,
+            false
+        );
+
+        vm.stopPrank();
+
+        ( uint256 borrowRate, uint256 liquidityRate ) = _getUpdatedRates(200 ether, 1899 ether);
+
+        assertApproxEqAbs(borrowRate,    0.052632964718272775144813059e27, 2);
+        assertApproxEqAbs(liquidityRate, 0.005266068086609703674309889e27, 2);
+
+        // The repaid debt counts as added liquidity in the collateral reserve's rate update, so
+        // rates settle on 200 debt against 1700 + 100 repaid - 101 seized = 1699 of liquidity
+        collateralReserveParams.currentLiquidityRate      = liquidityRate;
+        collateralReserveParams.currentVariableBorrowRate = borrowRate;
+
+        aCollateralAssetParams.userBalance = 1899 ether;  // 101 seized (100 + 1% bonus)
+        aCollateralAssetParams.totalSupply = 1899 ether;
+
+        collateralDebtTokenParams.userBalance = 200 ether;
+        collateralDebtTokenParams.totalSupply = 200 ether;
+
+        collateralAssetParams.allowance     = 0;
+        collateralAssetParams.userBalance   = 101 ether;
+        collateralAssetParams.aTokenBalance = 1699 ether;
+
+        // Strategy rounds half-up while _getUpdatedRates floors, so allow 2 wei of drift on rates
+        _assertPoolReserveState(collateralReserveParams, 2);
+        _assertPoolReserveState(borrowReserveParams);
+        _assertATokenState(aCollateralAssetParams);
+        _assertDebtTokenState(collateralDebtTokenParams);
+        _assertDebtTokenState(borrowAssetDebtTokenParams);
+        _assertAssetState(collateralAssetParams);
+
+        assertEq(pool.getUserConfiguration(borrower).isUsingAsCollateral(collateralAssetId), true);
+        assertEq(pool.getUserConfiguration(borrower).isBorrowing(collateralAssetId),         true);
+        assertEq(pool.getUserConfiguration(borrower).isBorrowing(borrowAssetId),             true);
+
+        ( ,,,,, healthFactor ) = pool.getUserAccountData(borrower);
+
+        assertEq(healthFactor, 0.79125e18);  // (1899 * 50%) / (500 * 2 + 200)
+    }
+
     /**********************************************************************************************/
     /*** Helper Functions                                                                       ***/
     /**********************************************************************************************/

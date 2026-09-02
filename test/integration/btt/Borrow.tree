@@ -35,6 +35,8 @@ pool.borrow()
     └── it should revert
 ├── when user is NOT using siloed borrowing and tries to borrow siloed asset
     └── it should revert
+├── when the health factor after the debt is minted is below 1
+    └── it should revert (boundary)
 
 ├── when it's the user's first borrow
     └── it should succeed, updating rates and isBorrowing for user [01]
