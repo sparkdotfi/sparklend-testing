@@ -91,6 +91,70 @@ contract GhostCollateralFlagTests is SparkLendTestBase {
         assertEq(_isCollateral(address(collateralAsset), victim), true);
     }
 
+    // Maximum-side counterpart of the ghost tests: transferring the exact visible balance burns
+    // the full scaled balance (rayDivCeil(floor(scaled * index), index) == scaled) and the
+    // balanceFromBefore == amount equality holds, so the flag clears.
+    function test_maxTransfer_clearsScaledBalanceAndFlag() public {
+        uint256 fullBalance   = aCollateralAsset.balanceOf(victim);
+        uint256 scaledBalance = aCollateralAsset.scaledBalanceOf(victim);
+
+        assertEq(scaledBalance,                                    1_000_000 ether);
+        assertEq(_isCollateral(address(collateralAsset), victim),  true);
+        assertEq(aCollateralAsset.scaledBalanceOf(recipient),      0);
+
+        vm.prank(victim);
+        aCollateralAsset.transfer(recipient, fullBalance);
+
+        assertEq(aCollateralAsset.scaledBalanceOf(victim),        0);
+        assertEq(aCollateralAsset.balanceOf(victim),              0);
+        assertEq(_isCollateral(address(collateralAsset), victim), false);
+
+        // The same scaled amount is credited to the recipient
+        assertEq(aCollateralAsset.scaledBalanceOf(recipient), scaledBalance);
+        assertEq(aCollateralAsset.balanceOf(recipient),       fullBalance);
+    }
+
+    function test_maxWithdraw_clearsScaledBalanceAndFlag() public {
+        // Extra collateralAsset cash so the victim's full-balance withdraw is covered even with
+        // the borrow outstanding.
+        _supply(lp, address(collateralAsset), 3_000_000 ether);
+
+        uint256 fullBalance = aCollateralAsset.balanceOf(victim);
+
+        assertEq(aCollateralAsset.scaledBalanceOf(victim),        1_000_000 ether);
+        assertEq(_isCollateral(address(collateralAsset), victim), true);
+
+        uint256 startingBalance = collateralAsset.balanceOf(victim);
+
+        vm.prank(victim);
+        pool.withdraw(address(collateralAsset), type(uint256).max, victim);
+
+        assertEq(aCollateralAsset.scaledBalanceOf(victim),        0);
+        assertEq(aCollateralAsset.balanceOf(victim),              0);
+        assertEq(_isCollateral(address(collateralAsset), victim), false);
+
+        assertEq(collateralAsset.balanceOf(victim), startingBalance + fullBalance);
+    }
+
+    // At an index above 1.0 the floored scaled mint turns a 1-wei supply into zero scaled tokens,
+    // which reverts; 2 wei is the smallest supply that mints (exactly 1 wei of scaled balance).
+    function test_supply_dustMintBoundaryAtIndexAboveOne() public {
+        assertGt(pool.getReserveNormalizedIncome(address(collateralAsset)), 1e27);
+
+        deal(address(collateralAsset), recipient, 2);
+
+        vm.startPrank(recipient);
+        collateralAsset.approve(address(pool), 2);
+
+        vm.expectRevert(bytes("24"));  // Errors.INVALID_MINT_AMOUNT
+        pool.supply(address(collateralAsset), 1, recipient, 0);
+
+        pool.supply(address(collateralAsset), 2, recipient, 0);
+        vm.stopPrank();
+
+        assertEq(aCollateralAsset.scaledBalanceOf(recipient), 1);
+    }
+
     function test_ghostFlag_isClearableDirectly() public {
         assertEq(aCollateralAsset.scaledBalanceOf(victim),        1_000_000 ether);
         assertEq(_isCollateral(address(collateralAsset), victim), true);

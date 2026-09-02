@@ -84,5 +84,8 @@ pool.liquidationCall()
 ├── when the collateralAsset and the debtAsset are the same reserve
    └── it should succeed, adding the repaid debt as liquidity in the reserve's rate update [19]
 
+├── when the scaled protocol fee exceeds the user's remaining scaled balance after the collateral burn
+   └── it should cap the fee at the floored remaining balance instead of reverting, leaving at most a scaled wei of dust with the user [20]
+
 TODO: Figure out what the deal is with handleRepayment
 TODO: Think more about _calculateAvailableCollateralToLiquidate and how HF plays into it with LT
