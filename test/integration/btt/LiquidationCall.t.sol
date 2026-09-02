@@ -1370,6 +1370,85 @@ contract LiquidationCallConcreteTest is LiquidationCallTestBase {
         assertEq(healthFactor, 0.79125e18);  // (1899 * 50%) / (500 * 2 + 200)
     }
 
+    function test_liquidationCall_20()
+        public
+        whenProtocolFeeIsNotZero
+    {
+        address otherActor = makeAddr("otherActor");
+
+        // Grow the collateral reserve's index above 1.0 (and add cash for the payout) so the
+        // ceil-rounded scaled burns of the collateral and the fee can overshoot the user's
+        // scaled balance by a wei.
+        vm.prank(admin);
+        poolConfigurator.setReserveBorrowing(address(collateralAsset), true);
+
+        _supplyAndUseAsCollateral(otherActor, address(collateralAsset), 3000 ether);
+
+        vm.prank(otherActor);
+        pool.borrow(address(collateralAsset), 200 ether, 2, 0, otherActor);
+
+        // Bad debt: borrower's debt compounds past their collateral
+        vm.warp(1 + 1000 days);
+
+        uint256 income        = pool.getReserveNormalizedIncome(address(collateralAsset));
+        uint256 scaledBalance = aCollateralAsset.scaledBalanceOf(borrower);
+        uint256 userBalance   = aCollateralAsset.balanceOf(borrower);
+
+        assertGt(income, 1e27);
+
+        assertGt(IERC20(debtToken).balanceOf(borrower), userBalance);
+
+        // Reproduce _calculateAvailableCollateralToLiquidate for the full-collateral branch
+        // (prices and decimals are equal): the whole balance splits into liquidator collateral
+        // and protocol fee with no remainder in visible units.
+        uint256 bonusCollateral = userBalance - (userBalance * 1e4 + 5050) / 101_00;
+        uint256 fee             = (bonusCollateral * 20_00 + 5000) / 1e4;
+        uint256 actual          = userBalance - fee;
+
+        // The burn and the fee transfer each ceil their scaled amount, so together they need one
+        // scaled wei more than the user has; the fee is then capped at the floored value of what
+        // remains after the collateral burn.
+        uint256 scaledBurned      = (actual * 1e27 + income - 1) / income;
+        uint256 scaledRemaining   = scaledBalance - scaledBurned;
+        uint256 scaledFeeUncapped = (fee * 1e27 + income - 1) / income;
+
+        assertGt(scaledFeeUncapped, scaledRemaining);
+
+        uint256 cappedFee = scaledRemaining * income / 1e27;
+
+        assertLt(cappedFee, fee);
+
+        // transferOnLiquidation rounds its scaled amount down, so the treasury receives one wei
+        // less than the remaining scaled balance and the borrower keeps a scaled wei of dust
+        // (with the collateral flag already cleared by the visible-amount equality).
+        uint256 treasuryScaled = cappedFee * 1e27 / income;
+        uint256 borrowerDust   = scaledRemaining - treasuryScaled;
+
+        assertEq(borrowerDust, 1);  // At this index the ceil/floor split leaves exactly one wei
+
+        uint256 liquidatorStartingBalance = collateralAsset.balanceOf(liquidator);
+
+        vm.startPrank(liquidator);
+        borrowAsset.mint(liquidator, 1400 ether);
+        borrowAsset.approve(address(pool), 1400 ether);
+
+        pool.liquidationCall(address(collateralAsset), address(borrowAsset), borrower, 1400 ether, false);
+
+        vm.stopPrank();
+
+        // The fee is capped instead of the transfer reverting; the borrower retains only the
+        // scaled dust from the floored fee transfer.
+        assertEq(aCollateralAsset.scaledBalanceOf(borrower), borrowerDust);
+        assertEq(aCollateralAsset.balanceOf(borrower),       borrowerDust * income / 1e27);
+
+        assertEq(pool.getUserConfiguration(borrower).isUsingAsCollateral(collateralAssetId), false);
+
+        assertEq(aCollateralAsset.scaledBalanceOf(treasury), treasuryScaled);
+        assertEq(aCollateralAsset.balanceOf(treasury),       treasuryScaled * income / 1e27);
+
+        assertEq(collateralAsset.balanceOf(liquidator), liquidatorStartingBalance + actual);
+    }
+
     /**********************************************************************************************/
     /*** Helper Functions                                                                       ***/
     /**********************************************************************************************/
