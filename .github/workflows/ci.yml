@@ -11,6 +11,22 @@ env:
   FOUNDRY_PROFILE: ci
 
 jobs:
+  check-core-pin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Check sparklend-v1-core pin matches the release commit
+        env:
+          # Rounding release head (sparklend-v1-core dev @ 900c189f). Update this when the
+          # release tag is cut, or switch this check to resolving the tag once it exists.
+          EXPECTED_CORE_PIN: 900c189feef2fafb97dca24c7b6e502dd035925a
+        run: |
+          actual="$(git ls-tree HEAD lib/sparklend-v1-core | awk '{print $3}')"
+          echo "pinned:   $actual"
+          echo "expected: $EXPECTED_CORE_PIN"
+          test "$actual" = "$EXPECTED_CORE_PIN"
+
   build:
     runs-on: ubuntu-latest
     steps:
