@@ -15,11 +15,12 @@ import { SparkLendTestBase } from "test/SparkLendTestBase.sol";
 // (up) while the flag-clear compares underlying amounts (balanceFromBefore == amount,
 // amountToWithdraw == userBalance, both read with rayMulFloor). An amount just below balanceOf can
 // empty the scaled balance while that equality reads false, leaving isUsingAsCollateral == true on
-// a zero balance. The flag then cannot be cleared, since setUserUseReserveAsCollateral reverts on
-// a zero balance (UNDERLYING_BALANCE_ZERO).
+// a zero balance.
 //
-// This is a known, accepted issue that will NOT be fixed; these tests exist to document it and
-// assert its current behavior.
+// The stale flag itself is a known, accepted issue that will NOT be fixed; these tests exist to
+// document it and assert its current behavior. Since the zero-balance check moved to the enable
+// path only (Certora recommendation fix #29), the ghost flag can be cleared directly with
+// setUserUseReserveAsCollateral(asset, false).
 
 contract GhostCollateralFlagTests is SparkLendTestBase {
 
@@ -90,7 +91,7 @@ contract GhostCollateralFlagTests is SparkLendTestBase {
         assertEq(_isCollateral(address(collateralAsset), victim), true);
     }
 
-    function test_ghostFlag_isUnclearableUntilResupply() public {
+    function test_ghostFlag_isClearableDirectly() public {
         assertEq(aCollateralAsset.scaledBalanceOf(victim),        1_000_000 ether);
         assertEq(_isCollateral(address(collateralAsset), victim), true);
 
@@ -101,24 +102,7 @@ contract GhostCollateralFlagTests is SparkLendTestBase {
         assertEq(aCollateralAsset.scaledBalanceOf(victim),        0);
         assertEq(_isCollateral(address(collateralAsset), victim), true);
 
-        // Disabling collateral directly reverts on the zeroed balance.
-        vm.prank(victim);
-        vm.expectRevert(bytes("43"));  // Errors.UNDERLYING_BALANCE_ZERO
-        pool.setUserUseReserveAsCollateral(address(collateralAsset), false);
-
-        // A 1-wei re-supply reverts (floored scaled mint rounds to zero at index > 1.0).
-        deal(address(collateralAsset), victim, 1);
-
-        vm.prank(victim);
-        collateralAsset.approve(address(pool), 1);
-
-        vm.expectRevert(bytes("24"));  // Errors.INVALID_MINT_AMOUNT
-        vm.prank(victim);
-        pool.supply(address(collateralAsset), 1, victim, 0);
-
-        // Have to supply more than one to get over rounding to zero
-        _supply(victim, address(collateralAsset), 2);
-
+        // The zero-balance check only applies when enabling, so the flag clears directly.
         vm.prank(victim);
         pool.setUserUseReserveAsCollateral(address(collateralAsset), false);
 

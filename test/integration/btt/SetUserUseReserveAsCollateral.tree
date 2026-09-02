@@ -1,0 +1,30 @@
+pool.setUserUseReserveAsCollateral()
+├── given not active
+   └── it should revert
+├── given paused
+   └── it should revert
+├── given frozen
+   └── it should succeed
+├── when the flag already matches the requested state
+    ├── when enabling and the flag is already enabled
+        └── it succeeds with a no-op [01]
+    └── when disabling and the flag is already disabled
+        └── it succeeds with a no-op, even with a zero aToken balance [02]
+├── when enabling
+   ├── when the user's scaled aToken balance is zero
+      └── it should revert
+   ├── when the asset has a zero LTV
+      └── it should revert
+   ├── when the user is in isolation mode
+      └── it should revert
+   ├── when the asset is isolated and the user is already using another asset as collateral
+      └── it should revert
+   └── when the user has a balance and validation passes
+      └── it should succeed, enabling the flag and emitting ReserveUsedAsCollateralEnabled [03]
+└── when disabling
+   ├── when the resulting health factor is below 1
+      └── it should revert (boundary)
+   ├── when the user holds other zero-LTV collateral and the disabled asset has a nonzero LTV
+      └── it should revert
+   └── when the resulting position stays healthy
+      └── it should succeed, disabling the flag and emitting ReserveUsedAsCollateralDisabled [04]

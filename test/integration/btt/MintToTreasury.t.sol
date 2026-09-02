@@ -471,7 +471,7 @@ contract MintToTreasuryTests is SparkLendTestBase {
     // TODO: Try to think of weird edge cases where indexes haven't been updated before minting
     //       Update index/accrued, warp, mint, update index, check accrued
 
-    function test_mintToTreasury_doesNotRevertWhenAccruedFeeRoundsDownToZero()
+    function test_mintToTreasury_12()
         external
         whenNoTimeHasPassed
     {
@@ -494,6 +494,12 @@ contract MintToTreasuryTests is SparkLendTestBase {
         vm.expectCall(aBorrowAsset, abi.encode(IAToken.mintToTreasury.selector), 0);
 
         pool.mintToTreasury(assets);
+
+        // The dust stays claimable instead of being zeroed while minting nothing
+        assertEq(pool.getReserveData(borrowAsset1).accruedToTreasury, 1);
+
+        assertEq(IAToken(aBorrowAsset).balanceOf(treasury),       0);
+        assertEq(IAToken(aBorrowAsset).scaledBalanceOf(treasury), 0);
     }
 
 }

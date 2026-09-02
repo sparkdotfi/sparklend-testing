@@ -9,6 +9,8 @@ pool.repayWithATokens()
    └── it should succeed
 ├── when there is no debt to be repaid (no variable debt)
    └── it should revert
+├── when the repaid asset is used as collateral and the resulting health factor is below 1
+   └── it should revert (boundary)
 ├── given reserve is NOT in isolation mode
     ├── given no time has passed since borrow
         └── when user is paying greater than debt
@@ -47,3 +49,10 @@ pool.repayWithATokens()
             └── it should repay all debt, user is no longer borrowing [15]
         └── when user is paying with less than debt
             └── it should repay some of the debt, user is still borrowing [16]
+├── given the repaid asset is used as collateral by the user
+    ├── when the repayment burns the user's entire aToken balance
+        └── it should succeed, disabling the asset as collateral and emitting ReserveUsedAsCollateralDisabled [17]
+    └── when the repayment leaves a nonzero aToken balance
+        └── it should succeed, keeping the asset enabled as collateral [18]
+└── when user is paying with max uint and the aToken balance is below the debt
+    └── it should repay the full aToken balance, user is still borrowing [19]
