@@ -53,9 +53,10 @@ interface IScaledTokenLike is IERC20Like {
 
 }
 
-// Stateful fuzzing handler for SparkLend. Every action is bounded and wrapped so a revert never
-// halts the campaign; the invariants live in Invariants.t.sol. Actions cover the full PR blast
-// radius: supply / withdraw / borrow / repay / aToken transfer / liquidation / time warp.
+// Stateful fuzzing handler for SparkLend. Every action bounds its inputs to a valid domain (or
+// vm.assume-discards the call) so a revert never reaches the runner and fail_on_revert can stay
+// on; the invariants live in Invariants.t.sol. Actions cover the full PR blast radius:
+// supply / withdraw / borrow / repay / aToken transfer / liquidation / time warp.
 contract PoolHandler is Test {
 
     using ReserveConfiguration for DataTypes.ReserveConfigurationMap;
